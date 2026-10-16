@@ -26,9 +26,7 @@ in
       colorScheme = "BreezeDark";
 
       wallpaperSlideShow = {
-        path = builtins.trace "inputs.self.outPath = ${inputs.self.outPath}" [
-          "${inputs.self.outPath}/nixos/modules/home/dotfiles/Wallpapers"
-        ];
+        path = "${inputs.self.outPath}/modules/home/Wallpapers";
         interval = 1200;
       };
     };
