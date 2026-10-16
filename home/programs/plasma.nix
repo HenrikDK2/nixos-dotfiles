@@ -29,7 +29,7 @@ in
       colorScheme = "BreezeDark";
 
       wallpaperSlideShow = {
-        path = "${inputs.self.outPath}/modules/home/Wallpapers";
+        path = "${../Wallpapers}";
         interval = 1200;
       };
     };

@@ -1,3 +1,4 @@
+
 { pkgs, ... }:
 
 {
@@ -12,10 +13,11 @@
     openssh.enable = true;
 
     desktopManager.plasma6.enable = true;
-    displayManager.sddm.enable = true;
+    displayManager.plasma-login-manager.enable = true;
   };
 
   programs.kde-pim.enable = false;
+
   environment.plasma6.excludePackages =
     with pkgs.kdePackages; [
       kate
