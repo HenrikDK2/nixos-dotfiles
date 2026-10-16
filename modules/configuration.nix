@@ -5,6 +5,7 @@
   imports = lib.flatten [
     /etc/nixos/hardware-configuration.nix
     (helpers.importAll ./home/users)
+    (helpers.importAll ./services)
   ];
 
   networking.hostName = "nixos";
@@ -38,10 +39,10 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # GPU hardware acceleration
+  # GPU
+  hardware.amdgpu.overdrive.enable = true;
   hardware.graphics.enable = true;
   hardware.graphics.enable32Bit = true;
-  hardware.amdgpu.overdrive.enable = true;
 
   # Desktop environment
   services = {

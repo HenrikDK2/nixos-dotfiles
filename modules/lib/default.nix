@@ -1,16 +1,29 @@
+
 { lib }:
 
-{
+let
   importAll = dir:
     let
       files = builtins.readDir dir;
     in
-    map
-      (name: dir + "/${name}")
-      (lib.filter
-        (name:
-          files.${name} == "regular"
+    lib.concatMap
+      (name:
+        let
+          path = dir + "/${name}";
+          type = files.${name};
+        in
+        if type == "directory" then
+          importAll path
+        else if
+          type == "regular"
           && builtins.match ".*\\.nix" name != null
-        )
-        (builtins.attrNames files));
+        then
+          [ path ]
+        else
+          [ ]
+      )
+      (builtins.attrNames files);
+in
+{
+  inherit importAll;
 }
