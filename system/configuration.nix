@@ -4,7 +4,7 @@
 {
   imports = lib.flatten [
     /etc/nixos/hardware-configuration.nix
-    (helpers.importAll ./home/users)
+    (helpers.importAll ../home/users)
     (helpers.importAll ./services)
   ];
 

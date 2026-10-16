@@ -22,14 +22,14 @@
   outputs = inputs@{ self, nixpkgs, home-manager, ... }:
     let
       lib = nixpkgs.lib;
-      helpers = import ./modules/lib { inherit lib; };
+      helpers = import ./lib { inherit lib; };
     in
     {
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         specialArgs = { inherit inputs helpers; };
 
         modules = [
-          ./modules/configuration.nix
+          ./system/configuration.nix
           home-manager.nixosModules.home-manager
           {
             home-manager = {
