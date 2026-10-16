@@ -6,6 +6,24 @@ let
   bind = name: key:
     lib.listToAttrs (map (n: lib.nameValuePair (name n) (key n)) nums);
 
+  minimizeWindow = app: {
+    description = "Start ${app} minimized";
+
+    match = {
+      window-class = {
+        value = app;
+        type = "substring";
+      };
+      window-types = [ "normal" ];
+    };
+
+    apply = {
+      minimize = {
+        value = true;
+        apply = "initially";
+      };
+    };
+  };
 in
 {
   imports = [ inputs.plasma-manager.homeModules.plasma-manager ];
@@ -103,6 +121,12 @@ in
       "services/org.kde.konsole.desktop"._launch = "Meta+Return";
       "services/org.kde.plasma-systemmonitor.desktop"._launch = "Ctrl+Alt+Delete";
     };
+
+    window-rules = map minimizeWindow [
+      "discord"
+      "steam"
+      "thunderbird"
+    ];
 
     configFile = {
       # Disable Akonadi-dependent KRunner plugins
