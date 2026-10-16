@@ -26,6 +26,22 @@ in
   home-manager.users.${username} = {
     home.stateVersion = "26.05";
 
+    home.pointerCursor = {
+      enable = true;
+
+      name = "Adwaita";
+      package = pkgs.adwaita-icon-theme;
+      size = 24;
+
+      x11 = {
+        enable = true;
+        defaultCursor = "left_ptr";
+        size = 24;
+      };
+
+      gtk.enable = true;
+    };
+
     imports = helpers.importAll ../programs;
 
     home.packages = with pkgs; [

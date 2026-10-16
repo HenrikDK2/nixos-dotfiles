@@ -5,28 +5,13 @@ let
   # { "<name n>" = <key n>; } for n = 1..9
   bind = name: key:
     lib.listToAttrs (map (n: lib.nameValuePair (name n) (key n)) nums);
-
-  minimizeWindow = app: {
-    description = "Start ${app} minimized";
-
-    match = {
-      window-class = {
-        value = app;
-        type = "substring";
-      };
-      window-types = [ "normal" ];
-    };
-
-    apply = {
-      minimize = {
-        value = true;
-        apply = "initially";
-      };
-    };
-  };
 in
 {
   imports = [ inputs.plasma-manager.homeModules.plasma-manager ];
+
+  # Install the Remember Window Positions KWin script
+  xdg.dataFile."kwin/scripts/rememberwindowpositions".source =
+    "${inputs.remember-window-positions}/src";
 
   # Disable Discover notifier daemon
   xdg.configFile."autostart/org.kde.discover.notifier.desktop".text = ''
@@ -125,12 +110,6 @@ in
       "services/org.kde.plasma-systemmonitor.desktop"._launch = "Ctrl+Alt+Delete";
     };
 
-    window-rules = map minimizeWindow [
-      "discord"
-      "steam"
-      "thunderbird"
-    ];
-
     configFile = {
       # Disable Akonadi-dependent KRunner plugins
       krunnerrc.Plugins = {
@@ -151,6 +130,8 @@ in
 
         # Allow legacy X11/XWayland applications to listen for mouse buttons.
         Xwayland.XwaylandEavesdropsMouse = true;
+
+        Plugins.rememberwindowpositionsEnabled = true;
       };
     };
   };
