@@ -50,7 +50,6 @@ readonly EXCLUDED_PATTERNS=(
     ".*[Rr]edist.*\.exe"
 )
 
-readonly OPTIMIZED_PS_SRC="$SCRIPT_DIR/optimized_ps.c"
 readonly OPTIMIZED_PS="$SCRIPT_DIR/optimized_ps"
 
 # Calibrated at startup: max(gpu_idle, GPU_IDLE_FLOOR) + GPU_IDLE_MARGIN.
@@ -187,18 +186,6 @@ disable_game_mode() {
 # GAME PROCESS DETECTION
 # =============================================================================
 
-# Compile optimized_ps only when optimized_ps.c has changed.
-build_optimized_ps() {
-    local sha="$OPTIMIZED_PS.sha256"
-    local hash=$(sha256sum "$OPTIMIZED_PS_SRC" | cut -d' ' -f1)
-
-    if [[ ! -x "$OPTIMIZED_PS" || ! -f "$sha" || "$hash" != "$(cat "$sha")" ]]; then
-    	echo "Compiling $OPTIMIZED_PS_SRC"
-        gcc -O3 -march=native "$OPTIMIZED_PS_SRC" -o "$OPTIMIZED_PS" || exit 1
-        echo "$hash" > "$sha"
-    fi
-}
-
 # Prints "pid<TAB>cmdline" for every running process matching GAME_PATTERN.
 scan_games() {
     "$OPTIMIZED_PS" | grep -E "$GAME_PATTERN" |
@@ -247,7 +234,10 @@ verify_game_process() {
 rm -f "$GAMEBOOST_FLAG"
 
 # Optimized ps replacement to reduce CPU time during process scanning.
-build_optimized_ps
+if [[ ! -x "$OPTIMIZED_PS" ]]; then
+    echo "ERROR: optimized_ps executable not found: $OPTIMIZED_PS" >&2
+    exit 1
+fi
 
 detect_gpu_vendor
 echo "GPU vendor: ${GPU_VENDOR:-none found}"

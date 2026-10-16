@@ -52,6 +52,7 @@ in
       discord
 
       steam
+      gamescope
       faugus-launcher
       protontricks
       protonplus
