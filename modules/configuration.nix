@@ -50,12 +50,7 @@
     openssh.enable = true;
 
     desktopManager.plasma6.enable = true;
-
     displayManager.sddm.enable = true;
-    displayManager.autoLogin = {
-      enable = true;
-      user = "henrik";
-    };
 
     pulseaudio.enable = false;
     pipewire = {

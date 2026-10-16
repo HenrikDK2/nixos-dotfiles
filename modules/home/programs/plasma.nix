@@ -102,6 +102,9 @@ in
       virtualDesktops = { number = 4; rows = 1; };
     };
 
+    session.sessionRestore.restoreOpenApplicationsOnLogin =
+      "startWithEmptySession";
+
     powerdevil = {
       AC.powerProfile = "performance";
       battery.powerProfile = "powerSaving";
