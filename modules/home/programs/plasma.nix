@@ -114,7 +114,7 @@ in
 
     shortcuts = {
       kwin = bind (n: "Switch to Desktop ${n}") (n: "Meta+${n}")
-        // bind (n: "Window to Desktop ${n}") (n: "Meta+Ctrl+${n}")
+        // bind (n: "Switch Window to Desktop ${n}") (n: "Meta+Shift+${n}")
         // { "Window Close" = [ "Meta+D" "Alt+F4" ]; "Show Desktop" = [ ]; };
 
       plasmashell = bind (n: "activate task manager entry ${n}") (_: [ ])
