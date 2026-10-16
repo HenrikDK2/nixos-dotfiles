@@ -14,6 +14,7 @@
       # Push behavior
       push.default = "upstream";
       remote.pushDefault = "upstream";
+      push.autoSetupRemote = true;
     };
   };
 }

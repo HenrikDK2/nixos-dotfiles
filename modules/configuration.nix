@@ -45,11 +45,18 @@
       xkb.layout = "dk";
     };
 
-    displayManager.sddm.enable = true;
-    desktopManager.plasma6.enable = true;
     printing.enable = true;
     lact.enable = true;
     openssh.enable = true;
+
+    desktopManager.plasma6.enable = true;
+
+    displayManager.sddm.enable = true;
+    displayManager.autoLogin = {
+      enable = true;
+      user = "henrik";
+    };
+
     pulseaudio.enable = false;
     pipewire = {
       enable = true;
