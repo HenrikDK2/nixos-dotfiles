@@ -8,7 +8,12 @@
   ];
 
   networking.hostName = "nixos";
-  networking.networkmanager.enable = true;
+  networking.networkmanager = {
+    enable = true;
+    plugins = with pkgs; [
+      networkmanager-openvpn
+    ];
+  };
 
   time.timeZone = "Europe/Copenhagen";
   console.keyMap = "dk-latin1";
