@@ -1,4 +1,3 @@
-
 { pkgs, ... }:
 
 let
@@ -70,6 +69,16 @@ in
 
       Restart = "on-failure";
       RestartSec = "2s";
+
+      # Lowest CPU priority
+      Nice = 19;
+      CPUWeight = 1;
+      CPUSchedulingPolicy = "idle";
+
+      # Lowest I/O priority
+      IOWeight = 1;
+      IOSchedulingClass = "idle";
+      IOSchedulingPriority = 7;
     };
   };
 }
