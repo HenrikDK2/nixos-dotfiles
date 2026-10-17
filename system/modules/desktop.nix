@@ -15,6 +15,11 @@
     displayManager.plasma-login-manager.enable = true;
   };
 
+  programs.appimage = {
+    enable = true;
+    binfmt = true;
+  };
+
   programs.kde-pim.enable = false;
   environment.plasma6.excludePackages =
     with pkgs.kdePackages; [
