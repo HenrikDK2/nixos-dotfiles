@@ -52,6 +52,7 @@ in
       discord
 
       gamescope
+      steam
       faugus-launcher
       proton-cachyos_x86_64_v3
       protontricks
