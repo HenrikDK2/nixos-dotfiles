@@ -7,11 +7,19 @@
     (helpers.importAll ../home/users)
     (helpers.importAll ./services)
     (helpers.importAll ./modules)
-
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = true;
+
+  # Enable the Chaotic Nyx binary cache to avoid building packages from source.
+  nix.settings.extra-substituters = [
+    "https://nyx-cache.chaotic.cx/"
+  ];
+
+  nix.settings.extra-trusted-public-keys = [
+    "nyx-cache.chaotic.cx:dJxTrgMC3V3cFfyIiBQDQorG6k1LsqurH/srpMSq7qk="
+  ];
 
   # Clean up old builds
   nix.gc = {
@@ -33,5 +41,5 @@
     ];
   };
 
-  system.stateVersion = "26.05";
+  system.stateVersion = "26.11";
 }
