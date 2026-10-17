@@ -47,6 +47,7 @@ in
     home.packages = with pkgs; [
       micro
       wl-clipboard
+      p7zip
 
       zed-editor
       discord
