@@ -9,10 +9,6 @@ in
 {
   imports = [ inputs.plasma-manager.homeModules.plasma-manager ];
 
-  # Install the Remember Window Positions KWin script
-  xdg.dataFile."kwin/scripts/rememberwindowpositions".source =
-    "${inputs.remember-window-positions}/src";
-
   # Disable Discover notifier daemon
   xdg.configFile."autostart/org.kde.discover.notifier.desktop".text = ''
     [Desktop Entry]

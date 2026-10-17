@@ -125,29 +125,12 @@
         "type": "github"
       }
     },
-    "remember-window-positions": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1789625313,
-        "narHash": "sha256-mlTF1DJpYKbUgFoFPXhLng6s6z8YbYam2VfdxhbUjtk=",
-        "owner": "rxappdev",
-        "repo": "RememberWindowPositions",
-        "rev": "54dee3610d7c0e255bbd8b48768b95a1dbe17f8e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "rxappdev",
-        "repo": "RememberWindowPositions",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "chaotic": "chaotic",
         "home-manager": "home-manager_2",
         "nixpkgs": "nixpkgs_2",
-        "plasma-manager": "plasma-manager",
-        "remember-window-positions": "remember-window-positions"
+        "plasma-manager": "plasma-manager"
       }
     }
   },
