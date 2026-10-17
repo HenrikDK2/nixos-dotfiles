@@ -1,5 +1,5 @@
 
-{ inputs, helpers, lib, pkgs, ... }:
+{ inputs, helpers, lib, ... }:
 
 {
   imports = lib.flatten [
@@ -9,30 +9,44 @@
     (helpers.importAll ./modules)
   ];
 
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = true;
 
-  # Enable the Chaotic Nyx binary cache to avoid building packages from source.
-  nix.settings.extra-substituters = [
-    "https://nyx-cache.chaotic.cx/"
-  ];
+  nix.settings = {
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
 
-  nix.settings.extra-trusted-public-keys = [
-    "nyx-cache.chaotic.cx:dJxTrgMC3V3cFfyIiBQDQorG6k1LsqurH/srpMSq7qk="
-  ];
+    # Maximum available build parallelism
+    max-jobs = "auto";
+    cores = 0;
 
-  # Clean up old builds
+    # Reduce duplicate files in the Nix store
+    auto-optimise-store = true;
+
+    # Binary cache
+    extra-substituters = [
+      "https://nyx-cache.chaotic.cx/"
+    ];
+
+    extra-trusted-public-keys = [
+      "nyx-cache.chaotic.cx:dJxTrgMC3V3cFfyIiBQDQorG6k1LsqurH/srpMSq7qk="
+    ];
+  };
+
+  # Garbage collection
   nix.gc = {
     automatic = true;
     dates = "weekly";
     options = "--delete-older-than 14d";
   };
 
-  # Automatic updates
+  # Automatic system upgrades
   system.autoUpgrade = {
     enable = true;
     flake = inputs.self.outPath;
     dates = "daily";
+
     flags = [
       "--update-input"
       "nixpkgs"
