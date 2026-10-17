@@ -7,6 +7,9 @@ let
     runtimeInputs = with pkgs; [
       p7zip
       coreutils
+      gnugrep
+      findutils
+      gawk
     ];
 
     text = builtins.readFile ./script.sh;

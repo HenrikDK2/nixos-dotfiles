@@ -1,4 +1,5 @@
-#!/bin/bash
+# Body for pkgs.writeShellApplication: it adds the shebang and
+# `set -euo pipefail`, so neither belongs here.
 
 readonly GAME="FFXIPAL"
 readonly DEFAULT_APP_ID=230350
@@ -13,10 +14,11 @@ library_dirs() {
 	for root in ~/.steam/steam ~/.local/share/Steam ~/Games \
 		~/.var/app/com.valvesoftware.Steam/.local/share/Steam \
 		~/snap/steam/common/.local/share/Steam \
-		/mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
+		/mnt/* /media/"${USER:-}"/* /run/media/"${USER:-}"/*; do
 		[ -d "$root" ] || continue
 		echo "$root"
-		grep -Poh '"path"\s+"\K[^"]+' "$root/steamapps/libraryfolders.vdf" 2>/dev/null
+		# `|| true`: a missing libraryfolders.vdf must not abort the loop
+		grep -Poh '"path"\s+"\K[^"]+' "$root/steamapps/libraryfolders.vdf" 2>/dev/null || true
 	done | xargs -rd '\n' -n1 readlink -f | awk '!seen[$0]++'
 }
 
@@ -25,7 +27,10 @@ find_in_libraries() {
 	local lib sa
 	while read -r lib; do
 		for sa in "$lib/steamapps" "$lib"; do
-			[ -d "$sa/$1" ] && { echo "$sa/$1"; return; }
+			if [ -d "$sa/$1" ]; then
+				echo "$sa/$1"
+				return 0
+			fi
 		done
 	done < <(library_dirs)
 	return 1
@@ -33,14 +38,14 @@ find_in_libraries() {
 
 app_id() {
 	local m
-	m=$(grep -l "\"installdir\"[[:space:]]*\"$GAME\"" "$1"/appmanifest_*.acf 2>/dev/null | head -n1)
+	m=$(grep -l "\"installdir\"[[:space:]]*\"$GAME\"" "$1"/appmanifest_*.acf 2>/dev/null | head -n1 || true)
 	m=${m##*_}
 	echo "${m%.acf}"
 }
 
 # Sets FFXI_DIR, APP_ID, PREFIX_DIR
 locate() {
-	[ -d "$FFXI_DIR" ] \
+	[ -d "${FFXI_DIR:-}" ] \
 		|| FFXI_DIR=$(find_in_libraries "common/$GAME") \
 		|| FFXI_DIR=$(find ~ /mnt /media /run/media -maxdepth 7 -type d -path "*/common/$GAME" -print -quit 2>/dev/null)
 	[ -d "$FFXI_DIR" ] || return 1
@@ -50,8 +55,13 @@ locate() {
 	APP_ID=${APP_ID:-$DEFAULT_APP_ID}
 
 	local pfx="compatdata/$APP_ID/pfx"
-	[ -d "$PREFIX_DIR" ] \
-		|| PREFIX_DIR=$([ -d "$steamapps/$pfx" ] && echo "$steamapps/$pfx" || find_in_libraries "$pfx")
+	if [ ! -d "${PREFIX_DIR:-}" ]; then
+		if [ -d "$steamapps/$pfx" ]; then
+			PREFIX_DIR="$steamapps/$pfx"
+		else
+			PREFIX_DIR=$(find_in_libraries "$pfx" || true)
+		fi
+	fi
 	return 0
 }
 
@@ -61,7 +71,10 @@ transfer() {
 	(
 		cd "$1" || exit 1
 		for item in settings.xml Windower "$POL/USER" "$POL"/Tools*; do
-			[ -e "$item" ] && cp -rf --parents "$item" "$2/"
+			# if, not `&&`: a missing optional item must not fail the subshell
+			if [ -e "$item" ]; then
+				cp -rf --parents "$item" "$2/"
+			fi
 		done
 	)
 }
@@ -71,13 +84,13 @@ write_installer() {
 		echo '#!/bin/bash'
 		declare -p GAME DEFAULT_APP_ID POL
 		declare -f die library_dirs find_in_libraries app_id locate transfer
-		cat <<'EOF'
+		cat <<'EOS'
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 locate || die "FFXI isn't installed. Install it first, or set FFXI_DIR."
 echo "Installing into: $FFXI_DIR"
 transfer "$PWD" "$FFXI_DIR"
 echo "FFXI backup installation complete."
-EOF
+EOS
 	} > "$BACKUP_DIR/install.sh"
 	chmod +x "$BACKUP_DIR/install.sh"
 }
