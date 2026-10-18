@@ -26,10 +26,12 @@
 
     # Binary cache
     extra-substituters = [
+      "https://cachyos-v3-kernel.cachix.org"
       "https://nyx-cache.chaotic.cx/"
     ];
 
     extra-trusted-public-keys = [
+      "cachyos-v3-kernel.cachix.org-1:Vi+DpCa8H/rJPK+D2O3n5Dpz3zpRkCJ1Zs22gejZlj0="
       "nyx-cache.chaotic.cx:dJxTrgMC3V3cFfyIiBQDQorG6k1LsqurH/srpMSq7qk="
     ];
   };

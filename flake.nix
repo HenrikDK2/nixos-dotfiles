@@ -3,6 +3,8 @@
     nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
     chaotic.url = "github:chaotic-cx/nyx/nyxpkgs-unstable";
 
+    cachyos-v3-kernel.url = "git+https://github.com/HenrikDK2/cachyos-v3-kernel-bot";
+
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -15,7 +17,7 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, chaotic, home-manager, ... }:
+  outputs = inputs@{ self, nixpkgs, cachyos-v3-kernel, chaotic, home-manager, ... }:
     let
       lib = nixpkgs.lib;
       helpers = import ./lib { inherit lib; };
@@ -26,6 +28,7 @@
 
         modules = [
           ./system/configuration.nix
+          cachyos-v3-kernel.nixosModules.default
           chaotic.nixosModules.default
           home-manager.nixosModules.home-manager
           {
