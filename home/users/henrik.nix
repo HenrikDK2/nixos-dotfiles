@@ -45,12 +45,12 @@ in
     imports = helpers.importAll ../programs;
 
     home.packages = with pkgs; [
-      micro
       wl-clipboard
       p7zip
 
       zed-editor
       discord
+      tidal-hifi
 
       gamescope
       steam
