@@ -42,7 +42,10 @@ in
       gtk.enable = true;
     };
 
-    imports = helpers.importAll ../programs;
+    imports = lib.flatten [
+      (helpers.importAll ../services)
+      (helpers.importAll ../programs)
+    ];
 
     home.packages = with pkgs; [
       wl-clipboard
