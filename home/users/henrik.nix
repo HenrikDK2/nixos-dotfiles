@@ -50,6 +50,7 @@ in
     home.packages = with pkgs; [
       wl-clipboard
       p7zip
+      mpv
 
       zed-editor
       discord
