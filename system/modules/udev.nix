@@ -6,6 +6,9 @@
     hdparm
   ];
 
+  # Add udev rules for steam devices
+  hardware.steam-hardware.enable = true;
+
   services.udev.extraRules = lib.concatStringsSep "\n" [
     # 1. SATA / HDD POWER MANAGEMENT
     ''
