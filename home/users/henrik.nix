@@ -64,6 +64,9 @@ in
       protonplus
     ];
 
+    # Add udev rules for steam devices
+    hardware.steam-hardware.enable = true;
+
     # Expose CachyOS Proton to Steam.
     xdg.dataFile."Steam/compatibilitytools.d/proton-cachyos".source =
       "${pkgs.proton-cachyos_x86_64_v3}";
