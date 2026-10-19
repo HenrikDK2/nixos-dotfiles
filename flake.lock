@@ -82,11 +82,11 @@
         "proton-cachyos": "proton-cachyos"
       },
       "locked": {
-        "lastModified": 1792440486,
-        "narHash": "sha256-LLO2p2FUNIH/EpAAM/fTSJqn8N06MWTKluB7kRkmbHA=",
+        "lastModified": 1792442157,
+        "narHash": "sha256-J2csYnLAYTO4Z94P3/F1ucvpSxXLasfaxDkz6rhQwIU=",
         "owner": "HenrikDK2",
         "repo": "nixos-x86-64-v3-repo",
-        "rev": "7bdd5c7505b17dcd6c4275cc62604194bc84ae7f",
+        "rev": "6ef00be161ed250a131040b358862abbf210715e",
         "type": "github"
       },
       "original": {
