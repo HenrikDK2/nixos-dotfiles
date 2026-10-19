@@ -1,4 +1,3 @@
-
 { inputs, helpers, lib, ... }:
 
 {
@@ -26,13 +25,11 @@
 
     # Binary cache
     extra-substituters = [
-      "https://cachyos-v3-kernel.cachix.org"
-      "https://nyx-cache.chaotic.cx/"
+      "https://nixos-x86-64-v3-repo.cachix.org"
     ];
 
     extra-trusted-public-keys = [
-      "cachyos-v3-kernel.cachix.org-1:Vi+DpCa8H/rJPK+D2O3n5Dpz3zpRkCJ1Zs22gejZlj0="
-      "nyx-cache.chaotic.cx:dJxTrgMC3V3cFfyIiBQDQorG6k1LsqurH/srpMSq7qk="
+      "nixos-x86-64-v3-repo.cachix.org-1:5cNXpGpvFb1eY+WXd9Sm8wdBlU84lhyy8AWI5F1ySJs="
     ];
   };
 

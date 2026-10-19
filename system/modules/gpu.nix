@@ -5,11 +5,6 @@
   hardware.graphics.enable = true;
   hardware.graphics.enable32Bit = true;
 
-  environment.systemPackages = [
-    pkgs.low-latency-layer
-  ];
-
-  environment.sessionVariables = {
-    LOW_LATENCY_LAYER = "1";
-  };
+  # Use the custom Mesa build for graphics
+  hardware.graphics.package = pkgs.mesa-x86_64-v3;
 }

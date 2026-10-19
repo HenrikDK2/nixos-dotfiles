@@ -1,44 +1,5 @@
 {
   "nodes": {
-    "cachyos-v3-kernel": {
-      "inputs": {
-        "nix-cachyos-kernel": "nix-cachyos-kernel"
-      },
-      "locked": {
-        "lastModified": 1792342428,
-        "narHash": "sha256-V9A0O2lJt/oKc0qkeB+LMwk2PCG3+BRVhpHQzYOjrcY=",
-        "ref": "refs/heads/main",
-        "rev": "3026b199ec6ad8f02da8fef8003d9fe84c3d6ac4",
-        "revCount": 7,
-        "type": "git",
-        "url": "https://github.com/HenrikDK2/cachyos-v3-kernel-bot"
-      },
-      "original": {
-        "type": "git",
-        "url": "https://github.com/HenrikDK2/cachyos-v3-kernel-bot"
-      }
-    },
-    "chaotic": {
-      "inputs": {
-        "flake-schemas": "flake-schemas",
-        "home-manager": "home-manager",
-        "nixpkgs": "nixpkgs_2"
-      },
-      "locked": {
-        "lastModified": 1792224768,
-        "narHash": "sha256-Jj1lkSuYdHE42h5n5O9eY6HrQR7JOEo8MMWyQCPdHBE=",
-        "owner": "chaotic-cx",
-        "repo": "nyx",
-        "rev": "d47fbd3559774e48b768e60b6295f2f16c5e6d75",
-        "type": "github"
-      },
-      "original": {
-        "owner": "chaotic-cx",
-        "ref": "nyxpkgs-unstable",
-        "repo": "nyx",
-        "type": "github"
-      }
-    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -73,53 +34,18 @@
         "type": "github"
       }
     },
-    "flake-schemas": {
-      "locked": {
-        "lastModified": 1780327564,
-        "narHash": "sha256-HiRPtA0spK+Dkgbhz/1zW9glXxNVB+L4Rj2VYmdawb8=",
-        "rev": "6cc9bd98891b1fc6bb2b8cb3277df8bc72799ca6",
-        "revCount": 149,
-        "type": "tarball",
-        "url": "https://api.flakehub.com/f/pinned/DeterminateSystems/flake-schemas/0.5.0/019e83cf-9af3-78b1-ac5b-70e68ad1efe1/source.tar.gz"
-      },
-      "original": {
-        "type": "tarball",
-        "url": "https://flakehub.com/f/DeterminateSystems/flake-schemas/%3D0.5.0.tar.gz"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
-          "chaotic",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1792098797,
-        "narHash": "sha256-u4DIIZgznEGzByxXrxWCXK19VcMtTBmi/M9gZ7Jk9bM=",
+        "lastModified": 1792438393,
+        "narHash": "sha256-C9hsBAUY/K7W7+CBSRdrT7XaX/ulVm3RuRBJNjmEM/A=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "640725978b99076e18e069f6e7d2959124584f8f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-community",
-        "repo": "home-manager",
-        "type": "github"
-      }
-    },
-    "home-manager_2": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1792098797,
-        "narHash": "sha256-u4DIIZgznEGzByxXrxWCXK19VcMtTBmi/M9gZ7Jk9bM=",
-        "owner": "nix-community",
-        "repo": "home-manager",
-        "rev": "640725978b99076e18e069f6e7d2959124584f8f",
+        "rev": "b74e23e34d3172802fdd60d4a1a01978f95e1898",
         "type": "github"
       },
       "original": {
@@ -146,6 +72,26 @@
         "owner": "xddxdd",
         "ref": "release",
         "repo": "nix-cachyos-kernel",
+        "type": "github"
+      }
+    },
+    "nixos-x86-64-v3-repo": {
+      "inputs": {
+        "nix-cachyos-kernel": "nix-cachyos-kernel",
+        "nixpkgs": "nixpkgs_2",
+        "proton-cachyos": "proton-cachyos"
+      },
+      "locked": {
+        "lastModified": 1792440486,
+        "narHash": "sha256-LLO2p2FUNIH/EpAAM/fTSJqn8N06MWTKluB7kRkmbHA=",
+        "owner": "HenrikDK2",
+        "repo": "nixos-x86-64-v3-repo",
+        "rev": "7bdd5c7505b17dcd6c4275cc62604194bc84ae7f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "HenrikDK2",
+        "repo": "nixos-x86-64-v3-repo",
         "type": "github"
       }
     },
@@ -182,15 +128,18 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1791956154,
-        "narHash": "sha256-gJX2+xcImvxBCI3bp7zXKLUX2AwsdTxMgJ1UX/5Hm/o=",
-        "rev": "55bfb4d7437bd4e09ab7cba58a43bd68eb310044",
-        "type": "tarball",
-        "url": "https://releases.nixos.org/nixos/unstable/nixos-26.11pre1092090.55bfb4d7437b/nixexprs.tar.zst"
+        "lastModified": 1792094642,
+        "narHash": "sha256-zp8ToDMnqZcu4o4IH9pdwXFXGp7yLm/M0dEnNWnyd7I=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "fe13242281a67641c0102cdb1087f0ebe586c7df",
+        "type": "github"
       },
       "original": {
-        "type": "tarball",
-        "url": "https://channels.nixos.org/nixos-unstable/nixexprs.tar.zst"
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
       }
     },
     "nixpkgs_3": {
@@ -229,11 +178,27 @@
         "type": "github"
       }
     },
+    "proton-cachyos": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792267842,
+        "narHash": "sha256-q7ro5AoaD9oEIzHJ1WSQBX9gV22yZisT2SvIzphno2k=",
+        "owner": "CachyOS",
+        "repo": "proton-cachyos",
+        "rev": "55ca17fb08ee01651916506334871df46aea3f62",
+        "type": "github"
+      },
+      "original": {
+        "owner": "CachyOS",
+        "ref": "cachyos_main",
+        "repo": "proton-cachyos",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
-        "cachyos-v3-kernel": "cachyos-v3-kernel",
-        "chaotic": "chaotic",
-        "home-manager": "home-manager_2",
+        "home-manager": "home-manager",
+        "nixos-x86-64-v3-repo": "nixos-x86-64-v3-repo",
         "nixpkgs": "nixpkgs_3",
         "plasma-manager": "plasma-manager"
       }
