@@ -8,7 +8,6 @@ let
 in
 {
   users.users.${username} = {
-
     isNormalUser = true;
 
     extraGroups = [
