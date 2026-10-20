@@ -1,6 +1,8 @@
-{ ... }:
+{ pkgs, ... }:
 
 {
+  home.packages = [ pkgs.monaspace ];
+
   programs.konsole = {
     enable = true;
     defaultProfile = "Clean";
@@ -64,7 +66,7 @@
       colorScheme = "Clean";
 
       font = {
-        name = "Monospace";
+        name = "Monaspace";
         size = 14;
       };
 
