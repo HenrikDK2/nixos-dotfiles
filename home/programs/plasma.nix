@@ -25,7 +25,7 @@ in
       colorScheme = "BreezeDark";
 
       wallpaperSlideShow = {
-        path = "${../Wallpapers}";
+        path = "${../assets/Wallpapers}";
         interval = 1200;
       };
     };
