@@ -6,7 +6,7 @@
     enable = true;
 
     shellAliases = {
-      nix-switch = "sudo nixos-rebuild switch --impure --flake $HOME/nixos";
+      nix-switch = "sudo nixos-rebuild switch --impure --flake ./";
     };
 
     interactiveShellInit = ''
