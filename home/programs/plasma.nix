@@ -152,8 +152,24 @@ in
 
     shortcuts = {
       kwin = bind (n: "Switch to Desktop ${n}") (n: "Meta+${n}")
-        // bind (n: "Switch Window to Desktop ${n}") (n: "Meta+Shift+${n}")
-        // { "Window Close" = [ "Meta+D" "Alt+F4" ]; "Show Desktop" = [ ]; };
+      // bind (n: "Switch Window to Desktop ${n}") (n: "Meta+Shift+${n}")
+      // {
+        "Window Close" = [ "Meta+D" "Alt+F4" ];
+        "Show Desktop" = [ ];
+
+        "Window Quick Tile Left" = [ ];
+        "Window Quick Tile Right" = [ ];
+        "Window Quick Tile Top" = [ ];
+        "Window Quick Tile Bottom" = [ ];
+
+        "Window Quick Tile Top Left" = [ ];
+        "Window Quick Tile Top Right" = [ ];
+        "Window Quick Tile Bottom Left" = [ ];
+        "Window Quick Tile Bottom Right" = [ ];
+
+        "Window to Next Screen" = [ ];
+        "Window to Previous Screen" = [ ];
+      };
 
       plasmashell = bind (n: "activate task manager entry ${n}") (_: [ ])
         // { "activate application launcher" = "Alt+F1"; };
