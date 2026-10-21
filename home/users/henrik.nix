@@ -63,18 +63,39 @@ in
       protonplus
     ];
 
+
+
     # Expose CachyOS Proton to Steam.
     xdg.dataFile."Steam/compatibilitytools.d/proton-cachyos-x86_64-v3".source =
       "${pkgs.proton-cachyos-x86_64-v3}/share/steam/compatibilitytools.d/proton-cachyos-x86_64-v3";
 
-    xdg.autostart = {
-      enable = true;
 
-      entries = with pkgs; [
-        "${steam}/share/applications/steam.desktop"
-        "${discord}/share/applications/discord.desktop"
-        "${thunderbird}/share/applications/thunderbird.desktop"
-      ];
+    # Auto start minimized
+    xdg.autostart.enable = true;
+    xdg.configFile = {
+      "autostart/steam.desktop".text = ''
+        [Desktop Entry]
+        Type=Application
+        Name=Steam
+        Exec=${pkgs.steam}/bin/steam -silent
+        X-KDE-autostart-after=panel
+      '';
+
+      "autostart/discord.desktop".text = ''
+        [Desktop Entry]
+        Type=Application
+        Name=Discord
+        Exec=${pkgs.bash}/bin/bash -c "${pkgs.coreutils}/bin/sleep 3; exec ${pkgs.discord}/bin/discord --start-minimized"
+        X-KDE-autostart-after=panel
+      '';
+
+      "autostart/thunderbird.desktop".text = ''
+        [Desktop Entry]
+        Type=Application
+        Name=Thunderbird
+        Exec=${pkgs.thunderbird}/bin/thunderbird
+        X-KDE-autostart-after=panel
+      '';
     };
   };
 }

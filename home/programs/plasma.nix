@@ -36,10 +36,20 @@ in
       height = 56;
       widgets = [
         "org.kde.plasma.kickoff"
-        "org.kde.plasma.icontasks"
-        "org.kde.plasma.marginsseparator"
+
         {
-          # Enabled tray applets; clipboard is deliberately left out
+          iconTasks = {
+            behavior.showTasks = {
+              onlyInCurrentActivity = false;
+              onlyInCurrentDesktop = false;
+              onlyInCurrentScreen = false;
+            };
+          };
+        }
+
+        "org.kde.plasma.marginsseparator"
+
+        {
           systemTray.items.extra = [
             "org.kde.plasma.devicenotifier"
             "org.kde.plasma.mediacontroller"
@@ -50,11 +60,15 @@ in
             "org.kde.plasma.bluetooth"
           ];
         }
+
         {
           digitalClock = {
             time.format = "24h";
             date.enable = false;
-            calendar = { firstDayOfWeek = "monday"; plugins = [ ]; };
+            calendar = {
+              firstDayOfWeek = "monday";
+              plugins = [];
+            };
           };
         }
       ];
@@ -137,8 +151,6 @@ in
 
         # Allow legacy X11/XWayland applications to listen for mouse buttons.
         Xwayland.XwaylandEavesdropsMouse = true;
-
-        Plugins.rememberwindowpositionsEnabled = true;
       };
     };
   };
