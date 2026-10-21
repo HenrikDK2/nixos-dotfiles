@@ -1,0 +1,16 @@
+{
+    "KPackageStructure": "KWin/Effect",
+    "KPlugin": {
+        "Id": "mastertile_effect",
+        "Name": "Master Tile",
+        "Description": "Smooth, Hyprland-style animations for windows that are tiled, moved or resized by scripts",
+        "Category": "Appearance",
+        "EnabledByDefault": false,
+        "License": "MIT",
+        "Version": "1.5"
+    },
+    "X-KDE-ConfigModule": "kcm_kwin4_genericscripted",
+    "X-KDE-Ordering": "60",
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js"
+}

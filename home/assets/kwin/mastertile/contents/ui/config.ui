@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MasterTileConfig</class>
+ <widget class="QWidget" name="MasterTileConfig">
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="labelOrder">
+     <property name="text">
+      <string>Fill order:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QComboBox" name="kcfg_FillOrder">
+     <item>
+      <property name="text">
+       <string>Left to right</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Right to left</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Middle first, then outward (right side first)</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Middle first, then outward (left side first)</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Custom order (set below)</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="labelCustom">
+     <property name="text">
+      <string>Custom order:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLineEdit" name="kcfg_CustomOrder">
+     <property name="placeholderText">
+      <string>e.g. 2, 3, 1, 5, 6, 4</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLabel" name="labelCustomHelp">
+     <property name="text">
+      <string>Only used when &quot;Custom order&quot; is selected. Tiles are numbered from the left starting at 1, and listed in the order windows should fill them. Works with any number of tiles.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="labelIgnored">
+     <property name="text">
+      <string>Never tile these apps:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLineEdit" name="kcfg_IgnoredClasses">
+     <property name="placeholderText">
+      <string>e.g. spectacle, org.kde.kcalc</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QCheckBox" name="kcfg_StackExtra">
+     <property name="text">
+      <string>When all tiles are full, add extra windows to the emptiest tile</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QCheckBox" name="kcfg_Debug">
+     <property name="text">
+      <string>Log debug output to the journal</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

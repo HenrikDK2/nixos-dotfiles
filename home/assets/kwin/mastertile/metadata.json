@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Id": "mastertile",
+        "Name": "Master Tile Placement",
+        "Description": "Place new windows into KWin's custom tiles in a defined order",
+        "Version": "1.10",
+        "License": "MIT"
+    },
+    "KPackageStructure": "KWin/Script",
+    "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted",
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js"
+}

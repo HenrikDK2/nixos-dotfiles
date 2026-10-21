@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MasterTileAnimationConfig</class>
+ <widget class="QWidget" name="MasterTileAnimationConfig">
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="labelDuration">
+     <property name="text">
+      <string>Duration:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QSpinBox" name="kcfg_Duration">
+     <property name="suffix">
+      <string> ms</string>
+     </property>
+     <property name="minimum">
+      <number>50</number>
+     </property>
+     <property name="maximum">
+      <number>1500</number>
+     </property>
+     <property name="singleStep">
+      <number>25</number>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="labelCurve">
+     <property name="text">
+      <string>Motion style:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="kcfg_Curve">
+     <item>
+      <property name="text">
+       <string>Smooth (fast start, soft landing)</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Snappy</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Gentle</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Bouncy (slight overshoot)</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="kcfg_AnimateOpen">
+     <property name="text">
+      <string>Animate new windows (pop-in)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="labelOpenScale">
+     <property name="text">
+      <string>Pop-in start size:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QSpinBox" name="kcfg_OpenScale">
+     <property name="suffix">
+      <string> %</string>
+     </property>
+     <property name="minimum">
+      <number>50</number>
+     </property>
+     <property name="maximum">
+      <number>100</number>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="labelExcluded">
+     <property name="text">
+      <string>Never animate these apps:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QLineEdit" name="kcfg_ExcludedClasses">
+     <property name="placeholderText">
+      <string>e.g. krunner, yakuake</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

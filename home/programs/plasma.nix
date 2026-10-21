@@ -17,6 +17,11 @@ in
     Hidden=true
   '';
 
+  xdg.dataFile = {
+    "kwin/scripts/mastertile".source = ../assets/kwin/mastertile;
+    "kwin/effects/mastertile_effect".source = ../assets/kwin/mastertile-effect;
+  };
+
   programs.plasma = {
     enable = true;
     overrideConfig = true;
@@ -174,6 +179,11 @@ in
       kdeglobals.KScreen.ScaleFactor = 1.15;
 
       kwinrc = {
+        Plugins = {
+          "mastertileEnabled" = true;
+          "mastertile_effectEnabled" = true;
+        };
+
         ModifierOnlyShortcuts.Meta = "";
         Windows = { FocusPolicy = "FocusFollowsMouse"; DelayFocusInterval = 0; };
 
