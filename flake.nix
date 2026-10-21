@@ -4,6 +4,11 @@
     nixos-x86-64-v3-repo.url = "github:HenrikDK2/nixos-x86-64-v3-repo";
     look.url = "github:kunkka19xx/look?dir=apps/linows";
 
+    low-latency-layer = {
+      url = "github:Korthos-Software/low_latency_layer";
+      flake = false;
+    };
+
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
