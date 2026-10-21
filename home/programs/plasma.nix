@@ -116,7 +116,34 @@ in
       battery.powerProfile = "powerSaving";
     };
 
-    krunner.shortcuts.launch = "Meta+Space";
+    krunner.shortcuts.launch = [ ];
+
+    window-rules = [
+      {
+        description = "Look launcher modal focus";
+
+        match = {
+          window-class = {
+            value = "look";
+            type = "substring";
+          };
+
+          window-types = [ "normal" ];
+        };
+
+        apply = {
+          focusprevention = {
+            value = "High";
+            apply = "force";
+          };
+
+          above = {
+            value = true;
+            apply = "force";
+          };
+        };
+      }
+    ];
 
     shortcuts = {
       kwin = bind (n: "Switch to Desktop ${n}") (n: "Meta+${n}")
@@ -129,6 +156,7 @@ in
       ksmserver."Log Out" = "Meta+Escape";
       "services/org.kde.konsole.desktop"._launch = "Meta+Return";
       "services/org.kde.plasma-systemmonitor.desktop"._launch = "Ctrl+Alt+Delete";
+      "services/lookapp.desktop"._launch = "Meta+Space";
     };
 
     configFile = {
