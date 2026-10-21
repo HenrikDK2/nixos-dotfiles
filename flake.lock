@@ -82,11 +82,11 @@
         "proton-cachyos": "proton-cachyos"
       },
       "locked": {
-        "lastModified": 1792532880,
-        "narHash": "sha256-7GVEKJW9IWB/3eo4BpSIAJKWNK7sQZyk9sTI0eGLNP4=",
+        "lastModified": 1792540984,
+        "narHash": "sha256-uyfgzQ4UrDOQ8VByEZSScZhV5w+OAZ1FrWZjr4QXzkc=",
         "owner": "HenrikDK2",
         "repo": "nixos-x86-64-v3-repo",
-        "rev": "dbbdce91768982981e8e4429c023bb323199e7cf",
+        "rev": "baaef54d2d1b6936890d2977c3863bed23d6b960",
         "type": "github"
       },
       "original": {
@@ -128,11 +128,11 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1792210252,
-        "narHash": "sha256-Mh0PUaIv4nFY+8wAGonaEh8iBzwsmdNlwjVHmFg1Biw=",
+        "lastModified": 1792502884,
+        "narHash": "sha256-IoNisKcGbUjdd45qCqywGMCYmZ5EnkxezvLII0FWwNA=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "09063bd1f2b36fd9fd793c36dfade7bd40a93dfc",
+        "rev": "02c087f3fe673c9e317f206a627cb6b910336dbe",
         "type": "github"
       },
       "original": {
@@ -144,11 +144,11 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1792488032,
-        "narHash": "sha256-jWdazKTNUOJQ3KE+9BAvpBOo6THrD0Qyb3S8F2GduUI=",
-        "rev": "e513db7b0a65def6f6e17bb55195dfe510871944",
+        "lastModified": 1792506237,
+        "narHash": "sha256-hVMDyAXU0kxRuG3GygbZkzf5x+aBNEC0NYEJ6KwHtD4=",
+        "rev": "5adc50831c259f87faeb09ddf930d43597197473",
         "type": "tarball",
-        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1097569.e513db7b0a65/nixexprs.tar.zst"
+        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1097770.5adc50831c25/nixexprs.tar.zst"
       },
       "original": {
         "type": "tarball",
@@ -181,11 +181,11 @@
     "proton-cachyos": {
       "flake": false,
       "locked": {
-        "lastModified": 1792267842,
-        "narHash": "sha256-q7ro5AoaD9oEIzHJ1WSQBX9gV22yZisT2SvIzphno2k=",
+        "lastModified": 1792531046,
+        "narHash": "sha256-vDR9XIuVI7IRZ/cz4TcIP8q1lD9Bbe2lCFXZvTIQGZw=",
         "owner": "CachyOS",
         "repo": "proton-cachyos",
-        "rev": "55ca17fb08ee01651916506334871df46aea3f62",
+        "rev": "55e91915c43ab921778f57b358a27eee30705a0f",
         "type": "github"
       },
       "original": {
