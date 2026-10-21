@@ -61,10 +61,11 @@ in
     }];
 
     input.mice = [{
-      name = "Logitech USB Receiver";
-      vendorId = "046d";
-      productId = "c54d";
-      accelerationProfile = "none";
+        name = "Logitech PRO X 2";
+        vendorId = "046d";
+        productId = "40a9";
+        accelerationProfile = "none";
+        enable = true;
     }];
 
     kwin = {
