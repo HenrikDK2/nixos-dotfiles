@@ -18,7 +18,7 @@ class MasterTileAnimation {
         effect.animationEnded.connect(this.onAnimationEnded.bind(this));
         effects.windowAdded.connect(this.onWindowAdded.bind(this));
         effects.windowClosed.connect(this.onWindowClosed);
-        effects.stackingOrder.forEach(w => this.manage(w));
+        effects.stackingOrder.forEach(window => this.manage(window));
         this.loadConfig();
     }
 
@@ -29,7 +29,7 @@ class MasterTileAnimation {
         this.openScale = Math.min(100, Math.max(50, Number(effect.readConfig("OpenScale", 90)))) / 100;
         this.excluded = new Set(
             String(effect.readConfig("ExcludedClasses", "krunner,yakuake"))
-                .split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
+                .split(",").map(value => value.trim().toLowerCase()).filter(Boolean)
         );
         this.configVersion = (this.configVersion || 0) + 1;
     }
@@ -103,7 +103,7 @@ class MasterTileAnimation {
         if (this.animateOpen && window.normalWindow && this.canAnimate(window)) {
             this.begin(window, 2);
             animate({
-                window: window,
+                window,
                 duration: this.duration,
                 curve: this.curve,
                 animations: [
@@ -139,6 +139,11 @@ class MasterTileAnimation {
         }
         if (nowMs - state.fsChangedAt < FULLSCREEN_SETTLE_MS) return;
 
+        // Most geometry notifications are for windows that must not animate
+        // (hidden, minimized, excluded, or off-desktop). Check eligibility before
+        // reading and comparing multiple geometry coordinates.
+        if (!this.canAnimate(window)) return;
+
         const now = window.geometry;
         if (now.width <= 0 || now.height <= 0 || old.width <= 0 || old.height <= 0) return;
         if (Math.abs(now.x - old.x) < MIN_CHANGE_PX &&
@@ -146,11 +151,9 @@ class MasterTileAnimation {
             Math.abs(now.width - old.width) < MIN_CHANGE_PX &&
             Math.abs(now.height - old.height) < MIN_CHANGE_PX) return;
 
-        if (!this.canAnimate(window)) return;
-
         this.begin(window, 2);
         animate({
-            window: window,
+            window,
             duration: this.duration,
             curve: this.curve,
             animations: [
