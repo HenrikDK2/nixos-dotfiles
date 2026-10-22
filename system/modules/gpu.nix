@@ -10,7 +10,7 @@
 
   # https://github.com/Korthos-Software/low_latency_layer
   environment.systemPackages = [
-    pkgs.low-latency-layer-x86_64-v3-lto
+    pkgs.low-latency-layer-lto-x86_64-v3
   ];
 
   environment.sessionVariables.LOW_LATENCY_LAYER = "1";
