@@ -5,7 +5,13 @@ let
   # { "<name n>" = <key n>; } for n = 1..9
   bind = name: key:
     lib.listToAttrs (map (n: lib.nameValuePair (name n) (key n)) nums);
-in
+
+  # KDE doesn't recognize Shift + Number keys on nordic keyboard.
+  windowToDesktopKeys = {
+    "1" = "!"; "2" = "\""; "3" = "#"; "4" = "¤"; "5" = "%";
+    "6" = "&"; "7" = "/"; "8" = "("; "9" = ")";
+  };
+  in
 {
   imports = [ inputs.plasma-manager.homeModules.plasma-manager ];
 
@@ -152,7 +158,9 @@ in
 
     shortcuts = {
       kwin = bind (n: "Switch to Desktop ${n}") (n: "Meta+${n}")
-      // bind (n: "Switch Window to Desktop ${n}") (n: "Meta+Shift+${n}")
+      // lib.mapAttrs'
+           (n: k: lib.nameValuePair "Window to Desktop ${n}" "Meta+${k}")
+           windowToDesktopKeys
       // {
         "Window Close" = [ "Meta+D" "Alt+F4" ];
         "Show Desktop" = [ ];
