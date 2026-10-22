@@ -41,11 +41,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1792668857,
-        "narHash": "sha256-chUrnAqBhBLvXBUsLFxFYBIl8c0GWp06wdjmAMS8l+U=",
+        "lastModified": 1792703141,
+        "narHash": "sha256-3X34FaSeMJXMx8CK/BN6sZ9knwNauuiJXQhLM+bQQuI=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "cb7de2c7e589afe7531d4832c71ad4df144624ea",
+        "rev": "6750249c69969d09d952efaf3fab88a2bdac7ec6",
         "type": "github"
       },
       "original": {
@@ -112,16 +112,17 @@
     },
     "nixos-x86-64-v3-repo": {
       "inputs": {
+        "low-latency-layer": "low-latency-layer",
         "nix-cachyos-kernel": "nix-cachyos-kernel",
         "nixpkgs": "nixpkgs_3",
         "proton-cachyos": "proton-cachyos"
       },
       "locked": {
-        "lastModified": 1792540984,
-        "narHash": "sha256-uyfgzQ4UrDOQ8VByEZSScZhV5w+OAZ1FrWZjr4QXzkc=",
+        "lastModified": 1792709191,
+        "narHash": "sha256-JKV6hQ9EsTVFrD6jwuv4flULbx1Ea18t7RN16/uwyt0=",
         "owner": "HenrikDK2",
         "repo": "nixos-x86-64-v3-repo",
-        "rev": "baaef54d2d1b6936890d2977c3863bed23d6b960",
+        "rev": "d8325eedb26d7dbfac5b64e8862f8e09d461acf2",
         "type": "github"
       },
       "original": {
@@ -250,7 +251,6 @@
       "inputs": {
         "home-manager": "home-manager",
         "look": "look",
-        "low-latency-layer": "low-latency-layer",
         "nixos-x86-64-v3-repo": "nixos-x86-64-v3-repo",
         "nixpkgs": "nixpkgs_4",
         "plasma-manager": "plasma-manager"
