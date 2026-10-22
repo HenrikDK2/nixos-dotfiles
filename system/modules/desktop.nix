@@ -9,7 +9,6 @@
 
     printing.enable = true;
     lact.enable = true;
-    openssh.enable = true;
 
     desktopManager.plasma6.enable = true;
     displayManager.plasma-login-manager.enable = true;
