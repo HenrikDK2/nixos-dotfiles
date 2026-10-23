@@ -16,7 +16,7 @@
       General = {
         Description = "Clean";
         Blur = true;
-        Opacity = 0.8;
+        Opacity = 0.7;
         ColorRandomization = false;
       };
 
