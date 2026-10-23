@@ -132,7 +132,6 @@ let
     window-rules = [
       {
         description = "Look launcher modal focus";
-
         match = {
           window-class = {
             value = "look";
@@ -143,8 +142,13 @@ let
         };
 
         apply = {
-          focusprevention = {
-            value = "High";
+          fsplevel = {
+            value = 4;
+            apply = "force";
+          };
+
+          fpplevel = {
+            value = 4;
             apply = "force";
           };
 
