@@ -15,39 +15,47 @@ readonly GAME_PATTERNS=(
 )
 
 readonly EXCLUDED_PATTERNS=(
-    "\.sh$"
-    "wineserver"
-    "pv-adverb"
-    "/dotnet"
-    "/7z.exe"
+    # Wine and Windows compatibility processes
     "xalia/xalia.exe"
+    "wineserver"
+    "/winetricks"
+    "C:/windows/.*"
+
+    # Steam runtime, compatibility tools, and internal processes
+    "/Steam/legacycompat/"
+    "/steamapps/compatdata/"
+    "iscriptevaluator\.exe"
     "bin/d3ddriverquery64.exe"
+    "pv-adverb"
     "pressure-vessel/bin/pressure-vessel-wrap"
     "pressure-vessel/libexec/steam-runtime-tools-0/srt-bwrap"
-    "(link2ea://launchgame|/Electronic Arts/EA Desktop)"
-    "C:/windows/.*"
-    "/steamapps/compatdata/"
-    "/winetricks"
 
-    # Project Zomboid Server
+    # Game servers and game-specific tools
     "ProjectZomboid64 -servername"
-
-    # FFXI
     "/Windower.exe"
 
-    # Vortex
-    "Black Tree Gaming Ltd/Vortex" "Vortex/Vortex.exe"
+    # Mod managers and related tools
+    "Black Tree Gaming Ltd/Vortex"
+    "Vortex/Vortex.exe"
+    "ModOrganizer.exe"
+    "MO2/mods"
+    "MO2/explorer++"
+    "MO2/loot/lootcli.exe"
 
-    # Modorganizer
-    "ModOrganizer.exe" "MO2/mods" "MO2/explorer++" "MO2/loot/lootcli.exe"
-
-    "(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
+    # Game launchers, installers, updaters, and runtime dependencies
+    "(link2ea://launchgame|/Electronic Arts/EA Desktop)"
     "/*[Ll]auncher*.exe"
     "/*[Ll]aunch[Pp]ad*.exe"
     "[Ss]etup\.exe"
     "[Ii]nstall.*\.exe"
     ".*[Uu]pdate.*\.exe"
     ".*[Rr]edist.*\.exe"
+    "/dotnet"
+    "/7z.exe" # Exclude archive extraction utilities used by game launchers.
+
+    # Package managers, shell utilities, and scripts
+    "(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
+    "\.sh$"
 )
 
 readonly OPTIMIZED_PS="$SCRIPT_DIR/optimized_ps"
