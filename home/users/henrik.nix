@@ -53,7 +53,6 @@ in
 
       zed-editor
       discord
-      tidal-hifi
 
       gamescope
       steam
