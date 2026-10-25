@@ -50,6 +50,7 @@
       "--update-input"
       "nixpkgs"
       "--no-write-lock-file"
+      "--impure"
       "-L"
     ];
   };
