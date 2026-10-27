@@ -40,20 +40,5 @@
     options = "--delete-older-than 14d";
   };
 
-  # Automatic system upgrades
-  system.autoUpgrade = {
-    enable = true;
-    flake = inputs.self.outPath;
-    dates = "daily";
-
-    flags = [
-      "--update-input"
-      "nixpkgs"
-      "--no-write-lock-file"
-      "--impure"
-      "-L"
-    ];
-  };
-
   system.stateVersion = "26.11";
 }
