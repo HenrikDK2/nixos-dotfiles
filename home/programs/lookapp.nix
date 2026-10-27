@@ -1,9 +1,6 @@
-
 { inputs, ... }:
 
 {
-  imports = [ inputs.look.homeModules.default ];
-
   programs.lookapp = {
     enable = true;
     theme = "custom";
