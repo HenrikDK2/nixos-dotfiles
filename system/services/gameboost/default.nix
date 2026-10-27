@@ -42,10 +42,10 @@ in
   systemd.services.gameboost = {
     description = "GameBoost game performance monitor";
 
-    wantedBy = [ "multi-user.target" ];
+    wantedBy = [ "graphical.target" ];
 
     after = [
-      "systemd-sysctl.service"
+      "graphical.target"
     ];
 
     path = with pkgs; [
