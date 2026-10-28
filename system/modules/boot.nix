@@ -31,6 +31,8 @@
 
   # Disable systemd watchdog handling
   systemd.settings.Manager = {
+    DefaultTimeoutStopSec = "10s";
+
     RuntimeWatchdogSec = "0";
     RebootWatchdogSec = "0";
     KExecWatchdogSec = "0";
