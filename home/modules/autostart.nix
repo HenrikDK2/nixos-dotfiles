@@ -8,7 +8,7 @@
       [Desktop Entry]
       Type=Application
       Name=Steam
-      Exec=${pkgs.steam}/bin/steam -silent
+      Exec=${pkgs.bash}/bin/bash -c "${pkgs.coreutils}/bin/sleep 3; exec ${pkgs.steam}/bin/steam -silent"
       X-KDE-autostart-after=panel
     '';
 
@@ -24,7 +24,7 @@
       [Desktop Entry]
       Type=Application
       Name=Thunderbird
-      Exec=${pkgs.thunderbird}/bin/thunderbird
+      Exec=${pkgs.bash}/bin/bash -c "${pkgs.coreutils}/bin/sleep 3; exec ${pkgs.thunderbird}/bin/thunderbird"
       X-KDE-autostart-after=panel
     '';
   };
