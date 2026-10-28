@@ -27,7 +27,7 @@ in
     allowReboot = false;
 
     dates = "hourly";
-    randomizedDelaySec = "0";
+    randomizedDelaySec = "300"; # Up to 5 minutes of randomized delay
     persistent = true;
 
     flags = [ "--impure" "-L" ];

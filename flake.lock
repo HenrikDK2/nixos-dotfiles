@@ -60,11 +60,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1793113232,
-        "narHash": "sha256-TPmEQoFQKLSMtG84ANrhorbKXXKgfRBrD6ge7a/uoDA=",
+        "lastModified": 1793148005,
+        "narHash": "sha256-blm4IQVknlxU3HKgw75reyC8idCVfdmkInT5oF8ADCI=",
         "owner": "kunkka19xx",
         "repo": "look",
-        "rev": "396ab8d73060c108510679a0b10744a0265ce261",
+        "rev": "f47ae7d8df50dd0b4ae7da3f8dddccd578ee407f",
         "type": "github"
       },
       "original": {
@@ -118,11 +118,11 @@
         "proton-cachyos": "proton-cachyos"
       },
       "locked": {
-        "lastModified": 1793145207,
-        "narHash": "sha256-K81Tb0k0SVZ6T5sUSkq3mAVIRmO1vmd4bJYRBwJqFlk=",
+        "lastModified": 1793166691,
+        "narHash": "sha256-nvR1N1hEyWZlh/vHS7LQ+8F9ho1qo/HemqhPXz4MH7A=",
         "owner": "HenrikDK2",
         "repo": "nixos-x86-64-v3-repo",
-        "rev": "25f26c412ac0a5fb6337ab694668e354f3539498",
+        "rev": "5154e0d492a59cd4d2ca9377590f8893daae8d2a",
         "type": "github"
       },
       "original": {
@@ -180,11 +180,11 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1792773339,
-        "narHash": "sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=",
+        "lastModified": 1793110635,
+        "narHash": "sha256-dhoW6VgFWlaodSY5jrBn+CF2FLmaUvDVgM7+C7T2+NM=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "3ec636362e1816bc2f0888fa0fa2c69f1bc9e504",
+        "rev": "31ecbaca1bdefa45dffc409f0250bd8039ea0010",
         "type": "github"
       },
       "original": {
@@ -196,11 +196,11 @@
     },
     "nixpkgs_4": {
       "locked": {
-        "lastModified": 1792842277,
-        "narHash": "sha256-lrp+A0ZwQN3V0tSZP6vVFIX/16FFOzr19mSup8XD80w=",
-        "rev": "d3b13ad75cc492690728f9307e443dec9ef9a20e",
+        "lastModified": 1793136825,
+        "narHash": "sha256-8VGQQhZfWvvWCoqOf5lb8AzUVbKJKvnihiXwJKKPH0s=",
+        "rev": "f05535a0efcb2134c478d1e88434fadf486d42b5",
         "type": "tarball",
-        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1100901.d3b13ad75cc4/nixexprs.tar.zst"
+        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1103464.f05535a0efcb/nixexprs.tar.zst"
       },
       "original": {
         "type": "tarball",
