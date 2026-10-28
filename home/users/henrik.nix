@@ -9,13 +9,12 @@ in
 {
   users.users.${username} = {
     isNormalUser = true;
+    initialPassword = "1234";
 
     extraGroups = [
       "networkmanager"
       "wheel"
     ];
-
-    initialPassword = "1234";
   };
 
   home-manager.extraSpecialArgs = {
