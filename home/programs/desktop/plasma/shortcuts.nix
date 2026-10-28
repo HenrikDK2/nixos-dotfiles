@@ -54,8 +54,7 @@ in
 
     ksmserver."Log Out" = "Meta+Escape";
     "services/org.kde.konsole.desktop"._launch = "Meta+Return";
-    "services/org.kde.plasma-systemmonitor.desktop"._launch =
-      "Ctrl+Alt+Delete";
+    "services/org.kde.plasma-systemmonitor.desktop"._launch = "Ctrl+Alt+Delete";
     "services/lookapp.desktop"._launch = "Meta+Space";
   };
 }
