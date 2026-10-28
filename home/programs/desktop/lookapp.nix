@@ -38,4 +38,11 @@
       ui_compositor_blur = true;
     };
   };
+
+  xdg.configFile."autostart/look.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Look
+    Hidden=true
+  '';
 }
