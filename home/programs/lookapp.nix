@@ -1,9 +1,14 @@
-{ inputs, ... }:
+{ inputs, pkgs, ... }:
 
 {
+  home.packages = [
+    pkgs.lookapp-lto-x86_64-v3
+  ];
+
   programs.lookapp = {
     enable = true;
     theme = "custom";
+    package = null;
 
     settings = {
       # Breeze Dark panel surface: #202326
