@@ -28,3 +28,18 @@ if ! nix flake update --flake "$flake"; then
   echo "flake update failed; skipping."
   exit 1
 fi
+
+# ---------- Commit updated flake.lock ----------
+if ! git -C "$flake" add flake.lock; then
+  echo "Failed to stage flake.lock; skipping."
+  exit 0
+fi
+
+if ! git -C "$flake" diff --cached --quiet -- flake.lock; then
+  if ! git -C "$flake" commit -m "Update flake.lock"; then
+    echo "Failed to commit flake.lock; skipping."
+    exit 0
+  fi
+else
+  echo "flake.lock unchanged; nothing to commit."
+fi
