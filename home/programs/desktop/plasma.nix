@@ -24,8 +24,8 @@ let
   '';
 
   xdg.dataFile = {
-    "kwin/scripts/mastertile".source = ../assets/kwin/mastertile;
-    "kwin/effects/mastertile_effect".source = ../assets/kwin/mastertile-effect;
+    "kwin/scripts/mastertile".source = ../../assets/kwin/mastertile;
+    "kwin/effects/mastertile_effect".source = ../../assets/kwin/mastertile-effect;
   };
 
   programs.plasma = {
@@ -37,7 +37,7 @@ let
       colorScheme = "BreezeDark";
 
       wallpaperSlideShow = {
-        path = "${../assets/Wallpapers}";
+        path = "${../../assets/Wallpapers}";
         interval = 1200;
       };
     };

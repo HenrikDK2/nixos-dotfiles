@@ -46,20 +46,6 @@ in
       (helpers.importAll ../programs)
     ];
 
-    home.packages = with pkgs; [
-      wl-clipboard
-      p7zip
-      mpv
-
-      zed-editor
-      discord
-
-      gamescope
-      proton-cachyos-x86_64-v3
-      protontricks
-      protonplus
-    ];
-
     # Auto start minimized
     xdg.autostart.enable = true;
     xdg.configFile = {
