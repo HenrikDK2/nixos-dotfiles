@@ -12,10 +12,10 @@ let
   upgradeGate = pkgs.writeShellApplication {
     name = "nixos-upgrade-gate";
     bashOptions = [ ];
-    runtimeInputs = with pkgs; [ nix git gawk gnugrep coreutils ];
+    runtimeInputs = [ pkgs.nix pkgs.git ];
     text = builtins.replaceStrings
-      [ "@flakeDir@" "@hostName@" ]
-      [ flakeDir config.networking.hostName ]
+      [ "@flakeDir@" ]
+      [ flakeDir ]
       (builtins.readFile ./main.sh);
   };
 in
@@ -37,9 +37,14 @@ in
     path = [ pkgs.nix pkgs.git ];
 
     serviceConfig = {
+      # Gates and `nix flake update` both live in main.sh. Exit 1 = quiet skip.
       ExecCondition = lib.getExe upgradeGate;
+      # Keeps PWD == flakeDir when the service re-evaluates the config,
+      # so the detected path survives automatic upgrades.
       WorkingDirectory = flakeDir;
     };
+
+    # No preStart: main.sh updates the flake, and only when an upgrade is due.
 
     postStart = ''
       printf '%(%s)T\n' -1 > ${stamp}.tmp
