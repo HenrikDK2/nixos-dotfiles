@@ -1,8 +1,6 @@
 { config, lib, pkgs, inputs, ... }:
 
 let
-  # Directory the rebuild was invoked from, if it actually holds a flake.
-  # Falls back to /etc/nixos (pure eval, or run from elsewhere).
   pwd = builtins.getEnv "PWD";
   flakeDir =
     if pwd != "" && builtins.pathExists (pwd + "/flake.nix")
@@ -14,7 +12,11 @@ let
   upgradeGate = pkgs.writeShellApplication {
     name = "nixos-upgrade-gate";
     bashOptions = [ ];
-    text = builtins.readFile ./main.sh;
+    runtimeInputs = with pkgs; [ nix git gawk gnugrep coreutils ];
+    text = builtins.replaceStrings
+      [ "@flakeDir@" "@hostName@" ]
+      [ flakeDir config.networking.hostName ]
+      (builtins.readFile ./main.sh);
   };
 in
 {
@@ -36,14 +38,8 @@ in
 
     serviceConfig = {
       ExecCondition = lib.getExe upgradeGate;
-      # Keeps PWD == flakeDir when the service re-evaluates the config,
-      # so the detected path survives automatic upgrades.
       WorkingDirectory = flakeDir;
     };
-
-    preStart = ''
-      nix flake update --flake ${flakeDir}
-    '';
 
     postStart = ''
       printf '%(%s)T\n' -1 > ${stamp}.tmp
