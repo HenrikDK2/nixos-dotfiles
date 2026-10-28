@@ -20,15 +20,21 @@
         "org.kde.plasma.marginsseparator"
 
         {
-          systemTray.items.extra = [
-            "org.kde.plasma.devicenotifier"
-            "org.kde.plasma.mediacontroller"
-            "org.kde.plasma.networkmanagement"
-            "org.kde.plasma.notifications"
-            "org.kde.plasma.volume"
-            "org.kde.plasma.battery"
-            "org.kde.plasma.bluetooth"
-          ];
+          systemTray.items = {
+            extra = [
+              "org.kde.plasma.devicenotifier"
+              "org.kde.plasma.mediacontroller"
+              "org.kde.plasma.networkmanagement"
+              "org.kde.plasma.notifications"
+              "org.kde.plasma.volume"
+              "org.kde.plasma.battery"
+              "org.kde.plasma.bluetooth"
+            ];
+
+            hidden = [
+              "org.kde.plasma.browserintegration"
+            ];
+          };
         }
 
         {
