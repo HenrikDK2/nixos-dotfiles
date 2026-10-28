@@ -1,4 +1,4 @@
-{ pkgs, lib, helpers, inputs, ... }:
+{ helpers, lib, ... }:
 
 let
   username = "henrik";
