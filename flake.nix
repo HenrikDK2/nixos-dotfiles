@@ -2,7 +2,6 @@
   inputs = {
     nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
     nixos-x86-64-v3-repo.url = "github:HenrikDK2/nixos-x86-64-v3-repo";
-    look.url = "github:kunkka19xx/look";
 
     home-manager = {
       url = "github:nix-community/home-manager";
