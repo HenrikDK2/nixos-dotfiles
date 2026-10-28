@@ -93,6 +93,13 @@ let
             accelerationProfile = "none";
             enable = true;
         }
+        { # Wireless Receiver
+            name = "Logitech USB Receiver";
+            vendorId = "046d";
+            productId = "c54d";
+            accelerationProfile = "none";
+            enable = true;
+        }
         { # Wired
             name = "Logitech PRO X 2";
             vendorId = "046d";
