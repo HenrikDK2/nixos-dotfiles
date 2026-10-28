@@ -8,6 +8,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    steam-config-nix = {
+      url = "github:different-name/steam-config-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     plasma-manager = {
       url = "github:nix-community/plasma-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -34,6 +39,12 @@
               useUserPackages = true;
               backupFileExtension = "backup";
               extraSpecialArgs = { inherit inputs helpers; };
+
+              users.henrik = {
+                imports = [
+                  inputs.steam-config-nix.homeModules.default
+                ];
+              };
             };
           }
         ];
