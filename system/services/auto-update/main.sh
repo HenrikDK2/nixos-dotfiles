@@ -30,7 +30,13 @@ if ! nix flake update --flake "$flake"; then
 fi
 
 # ---------- Commit updated flake.lock ----------
-if ! git -C "$flake" add flake.lock; then
+# Only commit if nothing else is already staged.
+if ! git -C "$flake" diff --cached --quiet; then
+  echo "Other changes are already staged; skipping flake.lock commit."
+  exit 0
+fi
+
+if ! git -C "$flake" add -- flake.lock; then
   echo "Failed to stage flake.lock; skipping."
   exit 0
 fi
