@@ -9,6 +9,12 @@ function is_laptop() {
     fi
 }
 
+# Queue a sysctl setting ("key=value"); apply_sysctls writes them all in a
+# single sysctl process instead of one fork+exec per key.
+SYSCTL_ARGS=()
+sc() { SYSCTL_ARGS+=("$1"); }
+apply_sysctls() { sysctl -w "${SYSCTL_ARGS[@]}"; }
+
 # Get total memory in KB
 total_memory=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 
@@ -28,48 +34,48 @@ fi
 # --------------------
 
 # Memory Management
-sysctl -w vm.swappiness=10                    # Reduce swap usage, keeping more processes in RAM for lower latency.
-sysctl -w vm.compaction_proactiveness=0       # Disable aggressive memory compaction to avoid CPU spikes.
-sysctl -w vm.min_free_kbytes=$min_free_kbytes # Maintain minimum free memory to prevent out-of-memory stalls.
-sysctl -w vm.max_map_count=2147483642         # Allow many memory mappings for large applications and databases.
-sysctl -w vm.zone_reclaim_mode=0              # Avoid reclaiming memory from remote NUMA nodes to reduce latency.
-sysctl -w vm.page_lock_unfairness=1           # Improve fairness when locking pages, reducing contention.
-sysctl -w vm.page-cluster=0                   # Minimize readahead to prevent unnecessary I/O and cache pollution.
-sysctl -w vm.dirty_ratio=10                   # Flush dirty pages more aggressively to avoid long writeback pauses.
-sysctl -w vm.dirty_background_ratio=5         # Start background flushing earlier to smooth disk I/O.
-sysctl -w vm.vfs_cache_pressure=50            # Balance filesystem metadata caching to avoid frequent lookups.
-sysctl -w vm.dirty_writeback_centisecs=1500   # Control writeback interval to smooth out disk I/O.
-sysctl -w vm.stat_interval=5                  # Less CPU time spent on memory bookkeeping
-sysctl -w vm.percpu_pagelist_fraction=0       # Reduce memory allocation overhead
-sysctl -w vm.watermark_scale_factor=1         # Minimize memory watermark calculations
+sc vm.swappiness=10                    # Reduce swap usage, keeping more processes in RAM for lower latency.
+sc vm.compaction_proactiveness=0       # Disable aggressive memory compaction to avoid CPU spikes.
+sc vm.min_free_kbytes=$min_free_kbytes # Maintain minimum free memory to prevent out-of-memory stalls.
+sc vm.max_map_count=2147483642         # Allow many memory mappings for large applications and databases.
+sc vm.zone_reclaim_mode=0              # Avoid reclaiming memory from remote NUMA nodes to reduce latency.
+sc vm.page_lock_unfairness=1           # Improve fairness when locking pages, reducing contention.
+sc vm.page-cluster=0                   # Minimize readahead to prevent unnecessary I/O and cache pollution.
+sc vm.dirty_ratio=10                   # Flush dirty pages more aggressively to avoid long writeback pauses.
+sc vm.dirty_background_ratio=5         # Start background flushing earlier to smooth disk I/O.
+sc vm.vfs_cache_pressure=50            # Balance filesystem metadata caching to avoid frequent lookups.
+sc vm.dirty_writeback_centisecs=1500   # Control writeback interval to smooth out disk I/O.
+sc vm.stat_interval=5                  # Less CPU time spent on memory bookkeeping
+sc vm.percpu_pagelist_fraction=0       # Reduce memory allocation overhead
+sc vm.watermark_scale_factor=1         # Minimize memory watermark calculations
 
 # CPU & Scheduler (Low Power Impact)
-sysctl -w kernel.sched_min_granularity_ns=1000000      # Fine-tune scheduler granularity for lower latency in interactive tasks.
-sysctl -w kernel.sched_autogroup_enabled=0             # Disable autogrouping to prevent latency spikes for single-threaded processes.
-sysctl -w kernel.perf_event_paranoid=2                 # Restrict unprivileged access to performance counters to reduce overhead.
-sysctl -w kernel.sched_wakeup_granularity_ns=15000000  # Reduce context switching overhead
-sysctl -w kernel.sched_migration_cost_ns=5000000       # Improve cache locality
-sysctl -w kernel.sched_child_runs_first=0              # Prevent child processes from interrupting
-sysctl -w kernel.nmi_watchdog=0                        # Disable NMI watchdog (prevents CPU sleep)
-sysctl -w kernel.watchdog=0                            # Disable soft lockup detector
-sysctl -w kernel.hung_task_timeout_secs=0              # Disable hung task detection
-sysctl -w kernel.numa_balancing=0                      # Disable NUMA balancing (CPU overhead)
+sc kernel.sched_min_granularity_ns=1000000      # Fine-tune scheduler granularity for lower latency in interactive tasks.
+sc kernel.sched_autogroup_enabled=0             # Disable autogrouping to prevent latency spikes for single-threaded processes.
+sc kernel.perf_event_paranoid=2                 # Restrict unprivileged access to performance counters to reduce overhead.
+sc kernel.sched_wakeup_granularity_ns=15000000  # Reduce context switching overhead
+sc kernel.sched_migration_cost_ns=5000000       # Improve cache locality
+sc kernel.sched_child_runs_first=0              # Prevent child processes from interrupting
+sc kernel.nmi_watchdog=0                        # Disable NMI watchdog (prevents CPU sleep)
+sc kernel.watchdog=0                            # Disable soft lockup detector
+sc kernel.hung_task_timeout_secs=0              # Disable hung task detection
+sc kernel.numa_balancing=0                      # Disable NUMA balancing (CPU overhead)
 
 # Network Tuning
-sysctl -w net.ipv4.tcp_fastopen=3                      # Reduce TCP handshake latency by sending data in the first SYN packet.
-sysctl -w net.ipv4.tcp_slow_start_after_idle=0         # Avoid slow-start after idle to maintain throughput for long-lived connections.
-sysctl -w net.ipv4.tcp_mtu_probing=1                   # Dynamically discover MTU to prevent fragmentation and improve throughput.
-sysctl -w net.core.rmem_max=16777216                   # Increase max socket receive buffer for high-throughput applications.
-sysctl -w net.core.wmem_max=16777216                   # Increase max socket send buffer for high-throughput applications.
-sysctl -w net.ipv4.tcp_rmem="4096 87380 16777216"      # Set TCP receive buffer min, default, max for efficient data flow.
-sysctl -w net.ipv4.tcp_wmem="4096 87380 16777216"      # Set TCP send buffer min, default, max for efficient data flow.
-sysctl -w net.core.netdev_budget=600                   # Improve network interrupt efficiency
-sysctl -w net.ipv4.tcp_no_metrics_save=1               # Eliminate periodic TCP housekeeping
+sc net.ipv4.tcp_fastopen=3                      # Reduce TCP handshake latency by sending data in the first SYN packet.
+sc net.ipv4.tcp_slow_start_after_idle=0         # Avoid slow-start after idle to maintain throughput for long-lived connections.
+sc net.ipv4.tcp_mtu_probing=1                   # Dynamically discover MTU to prevent fragmentation and improve throughput.
+sc net.core.rmem_max=16777216                   # Increase max socket receive buffer for high-throughput applications.
+sc net.core.wmem_max=16777216                   # Increase max socket send buffer for high-throughput applications.
+sc net.ipv4.tcp_rmem="4096 87380 16777216"      # Set TCP receive buffer min, default, max for efficient data flow.
+sc net.ipv4.tcp_wmem="4096 87380 16777216"      # Set TCP send buffer min, default, max for efficient data flow.
+sc net.core.netdev_budget=600                   # Improve network interrupt efficiency
+sc net.ipv4.tcp_no_metrics_save=1               # Eliminate periodic TCP housekeeping
 
 # Filesystem Optimizations
-sysctl -w fs.inotify.max_user_instances=1024
-sysctl -w fs.inotify.max_user_watches=524288
-sysctl -w fs.file-max=2097152
+sc fs.inotify.max_user_instances=1024
+sc fs.inotify.max_user_watches=524288
+sc fs.file-max=2097152
 
 # Transparent HugePages (THP)
 echo madvise > /sys/kernel/mm/transparent_hugepage/enabled      # Use THP on demand to reduce TLB misses for large memory allocations.
@@ -85,11 +91,11 @@ echo Y > /sys/module/zswap/parameters/enabled       # Enable compressed swap to 
 echo 0 > /sys/kernel/mm/ksm/run # Disable KSM to avoid CPU overhead if virtual machines are not used.
 
 if is_laptop; then
-    sysctl -w vm.laptop_mode=1                         # Enable laptop mode for better power management
-    sysctl -w kernel.timer_migration=1                 # Allow timer migration for better power management
+    sc vm.laptop_mode=1                         # Enable laptop mode for better power management
+    sc kernel.timer_migration=1                 # Allow timer migration for better power management
 else
-    sysctl -w vm.laptop_mode=0                         # Disable laptop mode
-    sysctl -w kernel.timer_migration=0                 # Pin timers to cores (prevents CPU sleep)
+    sc vm.laptop_mode=0                         # Disable laptop mode
+    sc kernel.timer_migration=0                 # Pin timers to cores (prevents CPU sleep)
 fi
 
 # --------------------
@@ -97,42 +103,44 @@ fi
 # --------------------
 
 # Kernel Security
-sysctl -w kernel.dmesg_restrict=1               # Restrict dmesg access to root to prevent information leaks.
-sysctl -w kernel.ftrace_enabled=0               # Disable kernel function tracing to reduce potential leaks.
-sysctl -w kernel.kptr_restrict=2                # Hide kernel pointers from unprivileged users to protect kernel memory layout.
-sysctl -w kernel.unprivileged_bpf_disabled=1    # Disable unprivileged BPF programs to reduce attack surface.
-sysctl -w kernel.kexec_load_disabled=1          # Prevent unauthorized kernel loading.
-sysctl -w kernel.sysrq=0                        # Disable SysRq key sequences to prevent unsafe commands.
-sysctl -w fs.suid_dumpable=0                    # Prevent SUID programs from generating core dumps.
-sysctl -w kernel.core_pattern="|/dev/null"      # Drop all core dumps to prevent sensitive data leakage.
+sc kernel.dmesg_restrict=1               # Restrict dmesg access to root to prevent information leaks.
+sc kernel.ftrace_enabled=0               # Disable kernel function tracing to reduce potential leaks.
+sc kernel.kptr_restrict=2                # Hide kernel pointers from unprivileged users to protect kernel memory layout.
+sc kernel.unprivileged_bpf_disabled=1    # Disable unprivileged BPF programs to reduce attack surface.
+sc kernel.kexec_load_disabled=1          # Prevent unauthorized kernel loading.
+sc kernel.sysrq=0                        # Disable SysRq key sequences to prevent unsafe commands.
+sc fs.suid_dumpable=0                    # Prevent SUID programs from generating core dumps.
+sc kernel.core_pattern="|/dev/null"      # Drop all core dumps to prevent sensitive data leakage.
 
 # Network Security
-sysctl -w net.ipv4.tcp_syncookies=1                     # Enable SYN cookies to mitigate SYN flood attacks.
-sysctl -w net.ipv4.tcp_timestamps=0                     # Disable TCP timestamps to reduce fingerprinting attack surface.
-sysctl -w net.ipv4.tcp_rfc1337=1                        # Handle TIME_WAIT sockets safely to prevent reuse attacks.
-sysctl -w net.ipv4.conf.all.rp_filter=1                 # Enable reverse path filtering to prevent IP spoofing.
-sysctl -w net.ipv4.conf.default.rp_filter=1
-sysctl -w net.ipv4.conf.all.send_redirects=0            # Disable ICMP redirects to prevent MITM attacks.
-sysctl -w net.ipv4.conf.all.accept_redirects=0
-sysctl -w net.ipv4.conf.default.accept_redirects=0
-sysctl -w net.ipv4.conf.all.secure_redirects=0
-sysctl -w net.ipv4.conf.default.secure_redirects=0
-sysctl -w net.ipv6.conf.all.accept_redirects=0
-sysctl -w net.ipv6.conf.default.accept_redirects=0
-sysctl -w net.ipv4.conf.all.accept_source_route=0       # Disable source routing to prevent traffic redirection attacks.
-sysctl -w net.ipv4.conf.default.accept_source_route=0
-sysctl -w net.ipv6.conf.all.accept_source_route=0
-sysctl -w net.ipv6.conf.default.accept_source_route=0
-sysctl -w net.ipv6.conf.all.accept_ra=0                 # Disable router advertisements to prevent rogue RA attacks.
-sysctl -w net.ipv6.conf.default.accept_ra=0
-sysctl -w net.ipv4.icmp_echo_ignore_all=1               # Ignore ICMP echo requests to prevent network scanning.
-sysctl -w net.ipv6.icmp.echo_ignore_all=1
-sysctl -w net.ipv4.tcp_dsack=0                          # Disable duplicate selective ACK to reduce fingerprinting attacks.
-sysctl -w net.ipv4.tcp_fack=0                           # Disable FACK to reduce fingerprinting attacks.
-sysctl -w net.ipv6.conf.all.disable_ipv6=1              # Disable IPv6 if not needed to reduce attack surface.
-sysctl -w net.ipv6.conf.default.disable_ipv6=1
-sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1        # Ignore broadcast pings to prevent amplification attacks.
-sysctl -w net.ipv4.icmp_ignore_bogus_error_responses=1  # Ignore malformed ICMP packets to prevent network abuse.
+sc net.ipv4.tcp_syncookies=1                     # Enable SYN cookies to mitigate SYN flood attacks.
+sc net.ipv4.tcp_timestamps=0                     # Disable TCP timestamps to reduce fingerprinting attack surface.
+sc net.ipv4.tcp_rfc1337=1                        # Handle TIME_WAIT sockets safely to prevent reuse attacks.
+sc net.ipv4.conf.all.rp_filter=1                 # Enable reverse path filtering to prevent IP spoofing.
+sc net.ipv4.conf.default.rp_filter=1
+sc net.ipv4.conf.all.send_redirects=0            # Disable ICMP redirects to prevent MITM attacks.
+sc net.ipv4.conf.all.accept_redirects=0
+sc net.ipv4.conf.default.accept_redirects=0
+sc net.ipv4.conf.all.secure_redirects=0
+sc net.ipv4.conf.default.secure_redirects=0
+sc net.ipv6.conf.all.accept_redirects=0
+sc net.ipv6.conf.default.accept_redirects=0
+sc net.ipv4.conf.all.accept_source_route=0       # Disable source routing to prevent traffic redirection attacks.
+sc net.ipv4.conf.default.accept_source_route=0
+sc net.ipv6.conf.all.accept_source_route=0
+sc net.ipv6.conf.default.accept_source_route=0
+sc net.ipv6.conf.all.accept_ra=0                 # Disable router advertisements to prevent rogue RA attacks.
+sc net.ipv6.conf.default.accept_ra=0
+sc net.ipv4.icmp_echo_ignore_all=1               # Ignore ICMP echo requests to prevent network scanning.
+sc net.ipv6.icmp.echo_ignore_all=1
+sc net.ipv4.tcp_dsack=0                          # Disable duplicate selective ACK to reduce fingerprinting attacks.
+sc net.ipv4.tcp_fack=0                           # Disable FACK to reduce fingerprinting attacks.
+sc net.ipv6.conf.all.disable_ipv6=1              # Disable IPv6 if not needed to reduce attack surface.
+sc net.ipv6.conf.default.disable_ipv6=1
+sc net.ipv4.icmp_echo_ignore_broadcasts=1        # Ignore broadcast pings to prevent amplification attacks.
+sc net.ipv4.icmp_ignore_bogus_error_responses=1  # Ignore malformed ICMP packets to prevent network abuse.
+
+apply_sysctls
 
 ###############################
 ### Future warning to self ####

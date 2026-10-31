@@ -37,6 +37,11 @@ in
     path = [ pkgs.nix pkgs.git ];
 
     serviceConfig = {
+      # Builds run in-process as root, inside this unit's cgroup, so the idle
+      # slice (see configuration.nix) covers every compiler/substituter it spawns.
+      Slice = "background.slice";
+      IOSchedulingClass = "idle";
+
       # Gates and `nix flake update` both live in main.sh. Exit 1 = quiet skip.
       ExecCondition = lib.getExe upgradeGate;
       # Keeps PWD == flakeDir when the service re-evaluates the config,

@@ -159,8 +159,10 @@ static inline void process_one(struct worker *w, const struct process *p) {
   }
 
   if (n > 0) {
+    /* One record per line: a '\n' inside an argument must not be able to
+     * forge a second "pid cmdline" record for the root-run caller. */
     for (ssize_t i = 0; i < n; ++i)
-      if (dst[i] == '\0')
+      if (dst[i] == '\0' || dst[i] == '\n')
         dst[i] = ' ';
 
     w->outpos += (size_t)n;

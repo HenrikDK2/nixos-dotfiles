@@ -40,5 +40,17 @@
     options = "--delete-older-than 14d";
   };
 
+  # Unattended Nix work (auto-upgrade, GC) runs in an idle-priority slice so it
+  # only uses CPU that the desktop are not using.
+  systemd.slices.background = {
+    description = "Idle-priority background maintenance";
+    sliceConfig.CPUWeight = "idle";
+  };
+
+  systemd.services.nix-gc.serviceConfig = {
+    Slice = "background.slice";
+    IOSchedulingClass = "idle";
+  };
+
   system.stateVersion = "26.11";
 }

@@ -70,6 +70,10 @@ in
       Restart = "on-failure";
       RestartSec = "2s";
 
+      # Root-owned /run/gameboost holds the "game mode active" flag.
+      # Primarily used to block auto-upgrades, and determine if game is running.
+      RuntimeDirectory = "gameboost";
+
       # Lowest CPU priority
       Nice = 19;
       CPUWeight = 1;

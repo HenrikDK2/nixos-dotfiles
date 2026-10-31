@@ -1,7 +1,7 @@
 #!/bin/bash
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly GAMEBOOST_FLAG="/tmp/gameboost-running.flag"
+readonly GAMEBOOST_FLAG="/run/gameboost/running.flag"
 CURRENT_PID=""
 
 readonly GAME_PATTERNS=(

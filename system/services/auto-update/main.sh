@@ -1,4 +1,4 @@
-readonly gate_flag=/tmp/gameboost-running.flag \
+readonly gate_flag=/run/gameboost/running.flag \
          gate_stamp=/var/lib/generation-stamp \
          gate_min_age=86400 \
          flake="@flakeDir@"
