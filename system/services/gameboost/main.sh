@@ -1,5 +1,8 @@
 #!/bin/bash
 
+export LC_ALL=C # Byte-wise matching: faster
+shopt -s lastpipe # One less fork per scan.
+
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly GAMEBOOST_FLAG="/run/gameboost/running.flag"
 CURRENT_PID=""
