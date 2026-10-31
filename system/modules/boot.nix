@@ -5,6 +5,7 @@
   boot.kernelPackages = pkgs.linux-cachyos-latest-lto-x86_64-v3;
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+  boot.kernelModules = [ "ntsync" ];
 
   # Disable kernel watchdogs
   boot.kernelParams = [
