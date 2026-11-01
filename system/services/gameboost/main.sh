@@ -1,7 +1,9 @@
 #!/bin/bash
 
-export LC_ALL=C # Byte-wise matching: faster
-shopt -s lastpipe # One less fork per scan.
+# Byte-wise matching: faster, and grep can't drop lines with invalid UTF-8.
+export LC_ALL=C
+# One less fork per scan.
+shopt -s lastpipe
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly GAMEBOOST_FLAG="/run/gameboost/running.flag"
@@ -177,18 +179,18 @@ gpu_indicates_game_activity() {
 
 enable_game_mode() {
     if [[ ! -f "$GAMEBOOST_FLAG" ]]; then
-        notify_user "Switching to performance mode"
         touch "$GAMEBOOST_FLAG"
         $SCRIPT_DIR/start.sh "$@" &
+        notify_user "Switching to performance mode" &
     fi
 }
 
 disable_game_mode() {
     if [[ -f "$GAMEBOOST_FLAG" ]]; then
-        notify_user "Switching to power-saving mode"
         pkill -f "$SCRIPT_DIR/start.sh"
         rm -f "$GAMEBOOST_FLAG"
         $SCRIPT_DIR/exit.sh &
+        notify_user "Switching to power-saving mode" &
         CURRENT_PID=""
     fi
 }

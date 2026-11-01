@@ -21,13 +21,19 @@ set_cpu_performance() {
     done
 }
 
-set_amd_gpu_performance() {
-    local gpu=$(lspci | awk '/VGA|3D/{print "/sys/bus/pci/devices/0000:" $1; exit}')
+# Force performance mode on all GPUs (VGA, 3D, display controllers)
+set_gpu_performance() {
+    local gpu class
 
-    [ -d "$gpu" ] || return
-    [ -f "$gpu/power_dpm_force_performance_level" ] && echo manual > "$gpu/power_dpm_force_performance_level"
-    [ -f "$gpu/power/control" ] && echo on > "$gpu/power/control"
-    [ -f "$gpu/pp_power_profile_mode" ] && echo 1 > "$gpu/pp_power_profile_mode"
+    for gpu in /sys/bus/pci/devices/*; do
+        read -r class 2>/dev/null < "$gpu/class" || continue
+        case $class in 0x0300* | 0x0302* | 0x0380*) ;; *) continue ;; esac
+
+        # AMD
+        [ -f "$gpu/power_dpm_force_performance_level" ] && echo manual > "$gpu/power_dpm_force_performance_level"
+        [ -f "$gpu/power/control" ] && echo on > "$gpu/power/control"
+        [ -f "$gpu/pp_power_profile_mode" ] && echo 1 > "$gpu/pp_power_profile_mode"
+    done
 }
 
 kill_background_processes() {
@@ -64,9 +70,19 @@ clear_ram_cache() {
 }
 
 set_process_priority() {
-    local pid
+    local pid alive=()
+
     for pid; do
-        renice -n -11 -p "$pid" >/dev/null 2>&1
+        kill -0 "$pid" 2>/dev/null && alive+=("$pid")
+    done
+
+    [ ${#alive[@]} -gt 0 ] || return
+
+    renice -n -11 -p "${alive[@]}" >/dev/null 2>&1
+    ionice -c2 -n0 -p "${alive[@]}" >/dev/null 2>&1 && return
+
+    # ionice stops at the first PID that vanished: retry one by one
+    for pid in "${alive[@]}"; do
         ionice -c2 -n0 -p "$pid" >/dev/null 2>&1
     done
 }
@@ -81,7 +97,7 @@ main() {
     fi
 
     set_cpu_performance
-    set_amd_gpu_performance
+    set_gpu_performance
     kill_background_processes
     clear_ram_cache
 }

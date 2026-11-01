@@ -7,13 +7,14 @@ is_laptop() {
 set_cpu_governor() {
     local cpu governor available epp
 
-    available=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors 2>/dev/null)
+    read -r available 2>/dev/null < /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
+    available=" $available "
 
-    if grep -qw powersave <<< "$available"; then
+    if [[ $available == *" powersave "* ]]; then
         governor=powersave
-    elif grep -qw ondemand <<< "$available"; then
+    elif [[ $available == *" ondemand "* ]]; then
         governor=ondemand
-    elif grep -qw conservative <<< "$available"; then
+    elif [[ $available == *" conservative "* ]]; then
         governor=conservative
     else
         return 1
@@ -39,13 +40,19 @@ set_cpu_governor() {
     done
 }
 
-set_amd_gpu_auto() {
-    local gpu=$(lspci | awk '/VGA|3D/{print "/sys/bus/pci/devices/0000:" $1; exit}')
+# Restore automatic power management on all GPUs (VGA, 3D, display controllers)
+set_gpu_auto() {
+    local gpu class
 
-    [ -d "$gpu" ] || return
-    [ -f "$gpu/power_dpm_force_performance_level" ] && echo auto > "$gpu/power_dpm_force_performance_level"
-    [ -f "$gpu/power/control" ] && echo auto > "$gpu/power/control"
-    [ -f "$gpu/pp_power_profile_mode" ] && echo 0 > "$gpu/pp_power_profile_mode"
+    for gpu in /sys/bus/pci/devices/*; do
+        read -r class 2>/dev/null < "$gpu/class" || continue
+        case $class in 0x0300* | 0x0302* | 0x0380*) ;; *) continue ;; esac
+
+        # AMD
+        [ -f "$gpu/power_dpm_force_performance_level" ] && echo auto > "$gpu/power_dpm_force_performance_level"
+        [ -f "$gpu/power/control" ] && echo auto > "$gpu/power/control"
+        [ -f "$gpu/pp_power_profile_mode" ] && echo 0 > "$gpu/pp_power_profile_mode"
+    done
 }
 
 kill_lingering_processes() {
@@ -93,7 +100,7 @@ main() {
     fi
 
     set_cpu_governor
-    set_amd_gpu_auto
+    set_gpu_auto
     kill_lingering_processes
     clear_ram_cache
 }
