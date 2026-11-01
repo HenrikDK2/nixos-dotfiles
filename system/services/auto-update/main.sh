@@ -3,6 +3,11 @@ readonly gate_flag=/run/gameboost/running.flag \
          gate_min_age=86400 \
          flake="@flakeDir@"
 
+readonly git_cmd=(git -C "$flake"
+  -c user.name="nixos-autoupgrade"
+  -c user.email="autoupgrade@localhost"
+  -c safe.directory="$flake")
+
 # ---------- Gate 1: GameBoost running ----------
 if [[ -e $gate_flag ]]; then
   echo "GameBoost is running; skipping."
@@ -30,19 +35,21 @@ if ! nix flake update --flake "$flake"; then
 fi
 
 # ---------- Commit updated flake.lock ----------
-# Only commit if nothing else is already staged.
-if ! git -C "$flake" diff --cached --quiet; then
+# Skip only if something OTHER than flake.lock is staged, so a leftover
+# staged flake.lock (e.g. from an earlier failed commit) can't block us.
+if ! "${git_cmd[@]}" diff --cached --quiet -- . ':(exclude)flake.lock'; then
   echo "Other changes are already staged; skipping flake.lock commit."
   exit 0
 fi
 
-if ! git -C "$flake" add -- flake.lock; then
+if ! "${git_cmd[@]}" add -- flake.lock; then
   echo "Failed to stage flake.lock; skipping."
   exit 0
 fi
 
-if ! git -C "$flake" diff --cached --quiet -- flake.lock; then
-  if ! git -C "$flake" commit -m "Update flake.lock"; then
+if ! "${git_cmd[@]}" diff --cached --quiet -- flake.lock; then
+  # Path-limited commit: only ever commits flake.lock.
+  if ! "${git_cmd[@]}" commit -m "Update flake.lock" -- flake.lock; then
     echo "Failed to commit flake.lock; skipping."
     exit 0
   fi
