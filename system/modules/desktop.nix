@@ -29,9 +29,12 @@
 
   programs.kde-pim.enable = false;
 
-  environment.plasma6.excludePackages = with pkgs.kdePackages; [
-    kate
-    qrca
-    krunner
-  ];
+  environment = {
+    sessionVariables.SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    plasma6.excludePackages = with pkgs.kdePackages; [
+      kate
+      qrca
+      krunner
+    ];
+  };
 }
