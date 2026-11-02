@@ -22,6 +22,7 @@
     package = pkgs.appimage-run.override {
       extraPkgs = pkgs: [
         pkgs.libgpg-error
+        pkgs.nghttp2
       ];
     };
   };
