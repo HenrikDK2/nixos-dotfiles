@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# Byte-wise matching: faster, and grep can't drop lines with invalid UTF-8.
+# Byte-wise string/regex handling is cheaper than UTF-8.
 export LC_ALL=C
-# One less fork per scan.
-shopt -s lastpipe
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly GAMEBOOST_FLAG="/run/gameboost/running.flag"
@@ -169,7 +167,7 @@ calibrate_gpu_threshold() {
 gpu_indicates_game_activity() {
     [[ -n "$GPU_VENDOR" ]] || return 0
     update_gpu_usage
-    [[ "$GPU_USAGE" =~ ^[0-9]+$ ]] || return 0
+    [[ -n $GPU_USAGE && $GPU_USAGE != *[!0-9]* ]] || return 0
     (( GPU_USAGE >= GPU_THRESHOLD ))
 }
 
@@ -199,17 +197,16 @@ disable_game_mode() {
 # GAME PROCESS DETECTION
 # =============================================================================
 
-# Prints "pid<TAB>cmdline" for every running process matching GAME_PATTERN.
+# Prints "pid<TAB>cmdline" for every process matching GAME_PATTERN and not
+# EXCLUDED_PATTERN. optimized_ps filters in-process: no grep or read loop.
+readonly SCAN_ARGS=(-m "$GAME_PATTERN" -x "$EXCLUDED_PATTERN")
+
 scan_games() {
-    "$OPTIMIZED_PS" | grep -E "$GAME_PATTERN" |
-        while read -r pid cmdline; do
-            [[ "$cmdline" =~ $EXCLUDED_PATTERN ]] ||
-                printf '%s\t%s\n' "$pid" "$cmdline"
-        done
+    "$OPTIMIZED_PS" "${SCAN_ARGS[@]}"
 }
 
 detect_game_process() {
-    local matches=$(scan_games)
+    local matches=$("$OPTIMIZED_PS" "${SCAN_ARGS[@]}")
     [[ -n "$matches" ]] || return
 
     local pid cmdline pids=()
@@ -249,6 +246,11 @@ rm -f "$GAMEBOOST_FLAG"
 # Optimized ps replacement to reduce CPU time during process scanning.
 if [[ ! -x "$OPTIMIZED_PS" ]]; then
     echo "ERROR: optimized_ps executable not found: $OPTIMIZED_PS" >&2
+    exit 1
+fi
+
+if ! "$OPTIMIZED_PS" -n "${SCAN_ARGS[@]}"; then
+    echo "ERROR: invalid GAME_PATTERNS / EXCLUDED_PATTERNS" >&2
     exit 1
 fi
 

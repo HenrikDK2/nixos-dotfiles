@@ -4,9 +4,11 @@
 #include <fcntl.h>
 #include <linux/types.h>
 #include <pthread.h>
+#include <regex.h>
 #include <sched.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
@@ -62,6 +64,240 @@ static char stacks[MAX_WORKERS][WORKER_STACK] __attribute__((aligned(4096)));
 static pthread_mutex_t out_lock = PTHREAD_MUTEX_INITIALIZER;
 static int no_close_range; /* only touched in single-threaded mode */
 
+/* Optional in-process filter:  optimized_ps -m GAME_ERE [-x EXCLUDE_ERE]
+ * Prints "pid<TAB>cmdline" for processes matching GAME_ERE and not EXCLUDE_ERE,
+ * replacing a `| grep -E | while read ... [[ =~ ]]` pipeline in the caller.
+ *
+ * glibc's regexec is slow (~30us/line), so every top-level alternative of
+ * GAME_ERE is reduced to one literal that any match must contain, and lines
+ * lacking all of them are rejected with memmem(). If the pattern uses anything
+ * the extractor is unsure about it gives up and every line gets the regex. */
+#define MAX_LITS 16
+#define MIN_LIT 3
+
+static regex_t re_game, re_excl;
+static int have_filter, have_excl;
+static const char *game_pat, *excl_pat;
+static pthread_once_t once_game = PTHREAD_ONCE_INIT, once_excl = PTHREAD_ONCE_INIT;
+static char self_pid[16]; /* never report ourselves: our argv holds the patterns */
+static size_t self_len;
+static struct {
+  const char *s;
+  size_t n;
+} lits[MAX_LITS];
+static int nlits;
+static char pool[2048];
+static size_t poolpos;
+
+/* p -> '[': returns the closing ']' of the bracket expression, or NULL. */
+static const char *skip_bracket(const char *p) {
+  ++p;
+
+  if (*p == '^')
+    ++p;
+
+  if (*p == ']')
+    ++p;
+
+  for (; *p; ++p) {
+    if (*p == '[' && (p[1] == ':' || p[1] == '.' || p[1] == '=')) {
+      char t = p[1];
+
+      for (p += 2; *p && !(*p == t && p[1] == ']'); ++p)
+        ;
+
+      if (!*p)
+        return NULL;
+
+      ++p;
+    } else if (*p == ']') {
+      return p;
+    }
+  }
+
+  return NULL;
+}
+
+/* Returns 1 and fills lits[] on success, 0 to disable the prefilter. */
+static int extract_literals(const char *re) {
+  size_t run = poolpos, runn = 0, best = 0, bestn = 0;
+  int depth = 0;
+
+#define END_RUN()                                                              \
+  do {                                                                         \
+    if (runn > bestn) {                                                        \
+      best = run;                                                              \
+      bestn = runn;                                                            \
+    }                                                                          \
+    run += runn;                                                               \
+    runn = 0;                                                                  \
+  } while (0)
+#define ADD_LIT(ch)                                                            \
+  do {                                                                         \
+    if (run + runn >= sizeof(pool))                                            \
+      return 0;                                                                \
+    pool[run + runn++] = (ch);                                                 \
+  } while (0)
+
+  for (const char *p = re;; ++p) {
+    char c = *p;
+
+    if (c == '\0' || (c == '|' && depth == 0)) {
+      END_RUN();
+
+      if (depth || bestn < MIN_LIT || nlits == MAX_LITS)
+        return 0;
+
+      lits[nlits].s = pool + best;
+      lits[nlits].n = bestn;
+      ++nlits;
+      bestn = 0;
+
+      if (!c)
+        break;
+
+      continue;
+    }
+
+    if (depth > 0) { /* inside a group: nothing in it is required */
+      if (c == '\\') {
+        if (!*++p)
+          return 0;
+      } else if (c == '[') {
+        if (!(p = skip_bracket(p)))
+          return 0;
+      } else if (c == '(') {
+        ++depth;
+      } else if (c == ')') {
+        --depth;
+      }
+
+      continue;
+    }
+
+    switch (c) {
+    case '\\':
+      if (!p[1])
+        return 0;
+
+      ++p;
+
+      /* Only escaped punctuation is a plain literal: \w \b \< \> \' ... are
+       * special in GNU regex. */
+      if (*p && strchr(".\\/-+*?[](){}|^$ :_,=@#%&!~\";", *p))
+        ADD_LIT(*p);
+      else
+        END_RUN();
+
+      break;
+    case '[':
+      END_RUN();
+
+      if (!(p = skip_bracket(p)))
+        return 0;
+
+      break;
+    case '(':
+      END_RUN();
+      depth = 1;
+      break;
+    case ')':
+      return 0;
+    case '.':
+    case '^':
+    case '$':
+    case '+':
+      END_RUN();
+      break;
+    case '*':
+    case '?':
+    case '{':
+      if (runn) /* the quantified atom is optional: not required */
+        --runn;
+
+      END_RUN();
+
+      if (c == '{') { /* only a plain interval {m,n} is understood */
+        for (++p; *p && *p != '}'; ++p)
+          if ((*p < '0' || *p > '9') && *p != ',')
+            return 0;
+
+        if (!*p)
+          return 0;
+      }
+
+      break;
+    default:
+      ADD_LIT(c);
+    }
+  }
+
+  poolpos = run;
+  return 1;
+#undef END_RUN
+#undef ADD_LIT
+}
+
+/* Most scans find no candidate, so the regexes are compiled on first use. */
+static void compile_game(void) {
+  if (regcomp(&re_game, game_pat, REG_EXTENDED | REG_NOSUB))
+    _exit(2);
+}
+
+static void compile_excl(void) {
+  if (regcomp(&re_excl, excl_pat, REG_EXTENDED | REG_NOSUB))
+    _exit(2);
+}
+
+/* Decide whether the record "pid cmdline" at w->out[start..outpos) is wanted.
+ * On success it is rewritten in place as "pid<TAB>cmdline" (blanks around the
+ * cmdline trimmed, as `read -r pid cmdline` does). */
+static int accept_record(struct worker *w, size_t start, size_t pidlen) {
+  char *line = w->out + start;
+
+  if (nlits) {
+    size_t len = w->outpos - start;
+    int hit = 0;
+
+    for (int i = 0; i < nlits && !hit; ++i)
+      hit = memmem(line, len, lits[i].s, lits[i].n) != NULL;
+
+    if (!hit)
+      return 0;
+  }
+
+  w->out[w->outpos] = '\0'; /* room reserved by process_one's `need` */
+
+  pthread_once(&once_game, compile_game);
+
+  if (regexec(&re_game, line, 0, NULL, 0))
+    return 0;
+
+  char *cmd = line + pidlen + 1, *end = w->out + w->outpos;
+
+  while (cmd < end && (*cmd == ' ' || *cmd == '\t'))
+    ++cmd;
+
+  while (end > cmd && (end[-1] == ' ' || end[-1] == '\t'))
+    --end;
+
+  *end = '\0';
+
+  if (have_excl) {
+    pthread_once(&once_excl, compile_excl);
+
+    if (!regexec(&re_excl, cmd, 0, NULL, 0))
+      return 0;
+  }
+
+  size_t clen = (size_t)(end - cmd);
+
+  line[pidlen] = '\t';
+  memmove(line + pidlen + 1, cmd, clen);
+  w->outpos = start + pidlen + 1 + clen;
+  return 1;
+}
+
 static void flush(struct worker *w) {
   size_t n = 0;
 
@@ -105,6 +341,9 @@ static void close_pending(struct worker *w) {
 
 static inline void process_one(struct worker *w, const struct process *p) {
   char path[24];
+
+  if (have_filter && p->len == self_len && !memcmp(p->pid, self_pid, self_len))
+    return;
 
   memcpy(path, p->pid, p->len);
   memcpy(path + p->len, "/cmdline", 9);
@@ -171,6 +410,11 @@ static inline void process_one(struct worker *w, const struct process *p) {
       w->outpos--;
   }
 
+  if (have_filter && !accept_record(w, start, p->len)) {
+    w->outpos = start;
+    return;
+  }
+
   w->out[w->outpos++] = '\n';
 }
 
@@ -198,7 +442,38 @@ static void *worker_main(void *arg) {
   return NULL;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  int check_only = 0;
+
+  for (int i = 1; i < argc; ++i) {
+    if (!strcmp(argv[i], "-n")) /* validate the patterns and exit */
+      check_only = 1;
+    else if (i + 1 < argc && !strcmp(argv[i], "-m"))
+      game_pat = argv[++i], have_filter = 1;
+    else if (i + 1 < argc && !strcmp(argv[i], "-x"))
+      excl_pat = argv[++i], have_excl = 1;
+    else
+      return 2;
+  }
+
+  if (have_excl && !have_filter)
+    return 2;
+
+  if (check_only)
+    return (!have_filter ||
+            (!regcomp(&re_game, game_pat, REG_EXTENDED | REG_NOSUB) &&
+             (!have_excl ||
+              !regcomp(&re_excl, excl_pat, REG_EXTENDED | REG_NOSUB))))
+               ? 0
+               : 2;
+
+  if (have_filter) {
+    if (!extract_literals(game_pat))
+      nlits = 0, poolpos = 0;
+
+    self_len = (size_t)snprintf(self_pid, sizeof(self_pid), "%d", (int)getpid());
+  }
+
   int procfd = open("/proc", O_RDONLY | O_DIRECTORY);
 
   if (procfd < 0)
