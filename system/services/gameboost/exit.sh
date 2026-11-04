@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# Original values saved by start.sh.
+STATE=/run/gameboost/state
+
+# restore_saved REGEX: restore matching entries, newest first (GPU profile
+# before level). Returns 1 without a state file.
+restore_saved() {
+    [ -f "$STATE" ] || return 1
+    local f v
+    while IFS='=' read -r f v; do
+        [[ $f =~ $1 ]] && echo "$v" > "$f" 2>/dev/null
+    done < <(tac "$STATE")
+    return 0
+}
+
 is_laptop() {
     [ -d /sys/class/power_supply/BAT0 ] || [ -d /sys/class/power_supply/BAT1 ]
 }
@@ -7,6 +21,9 @@ is_laptop() {
 set_cpu_governor() {
     local cpu governor available epp
 
+    restore_saved 'cpufreq|intel_pstate|split_lock_mitigate|amd_x3d_mode|cpu\.weight' && return
+
+    # Fallback without state file.
     read -r available 2>/dev/null < /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
     available=" $available "
 
@@ -44,14 +61,17 @@ set_cpu_governor() {
 set_gpu_auto() {
     local gpu class
 
+    restore_saved 'pp_power_profile_mode|power_dpm_force_performance_level|^/sys/bus/pci/devices/.*/power/control$' && return
+
+    # Fallback without state file: profile before level (needs "manual").
     for gpu in /sys/bus/pci/devices/*; do
         read -r class 2>/dev/null < "$gpu/class" || continue
         case $class in 0x0300* | 0x0302* | 0x0380*) ;; *) continue ;; esac
 
         # AMD
+        [ -f "$gpu/pp_power_profile_mode" ] && echo 0 > "$gpu/pp_power_profile_mode" 2>/dev/null
         [ -f "$gpu/power_dpm_force_performance_level" ] && echo auto > "$gpu/power_dpm_force_performance_level"
         [ -f "$gpu/power/control" ] && echo auto > "$gpu/power/control"
-        [ -f "$gpu/pp_power_profile_mode" ] && echo 0 > "$gpu/pp_power_profile_mode"
     done
 }
 
@@ -67,6 +87,9 @@ kill_lingering_processes() {
 
 restore_sata_power_management() {
     local host
+
+    restore_saved 'link_power_management_policy' && return
+
     for host in /sys/class/scsi_host/host*/link_power_management_policy; do
         echo med_power_with_dipm > "$host" 2>/dev/null
     done
@@ -74,6 +97,9 @@ restore_sata_power_management() {
 
 restore_nvme_power_management() {
     local nvme_dev
+
+    restore_saved '^/sys/block/nvme' && return
+
     for nvme_dev in /sys/block/nvme*/device; do
         [ -d "$nvme_dev/power" ] || continue
         echo 1000 > "$nvme_dev/power/autosuspend_delay_ms" 2>/dev/null
@@ -83,6 +109,9 @@ restore_nvme_power_management() {
 
 restore_pcie_power_management() {
     local pci
+
+    restore_saved '^/sys/bus/pci/devices/.*/power/control$|pcie_aspm' && return
+
     for pci in /sys/bus/pci/devices/*/power/control; do
         echo auto > "$pci" 2>/dev/null
     done
@@ -99,6 +128,8 @@ main() {
     set_cpu_governor
     set_gpu_auto
     kill_lingering_processes
+
+    rm -f "$STATE"
 }
 
 main "$@"
