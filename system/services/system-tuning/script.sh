@@ -46,16 +46,11 @@ sc vm.dirty_background_ratio=5         # Start background flushing earlier to sm
 sc vm.vfs_cache_pressure=50            # Balance filesystem metadata caching to avoid frequent lookups.
 sc vm.dirty_writeback_centisecs=1500   # Control writeback interval to smooth out disk I/O.
 sc vm.stat_interval=5                  # Less CPU time spent on memory bookkeeping
-sc vm.percpu_pagelist_fraction=0       # Reduce memory allocation overhead
 sc vm.watermark_scale_factor=1         # Minimize memory watermark calculations
 
 # CPU & Scheduler (Low Power Impact)
-sc kernel.sched_min_granularity_ns=1000000      # Fine-tune scheduler granularity for lower latency in interactive tasks.
 sc kernel.sched_autogroup_enabled=0             # Disable autogrouping to prevent latency spikes for single-threaded processes.
 sc kernel.perf_event_paranoid=2                 # Restrict unprivileged access to performance counters to reduce overhead.
-sc kernel.sched_wakeup_granularity_ns=15000000  # Reduce context switching overhead
-sc kernel.sched_migration_cost_ns=5000000       # Improve cache locality
-sc kernel.sched_child_runs_first=0              # Prevent child processes from interrupting
 sc kernel.nmi_watchdog=0                        # Disable NMI watchdog (prevents CPU sleep)
 sc kernel.watchdog=0                            # Disable soft lockup detector
 sc kernel.hung_task_timeout_secs=0              # Disable hung task detection
@@ -83,7 +78,6 @@ echo advise > /sys/kernel/mm/transparent_hugepage/shmem_enabled # Apply THP to s
 echo never > /sys/kernel/mm/transparent_hugepage/defrag         # Disable THP defragmentation to avoid CPU stalls during memory allocation.
 
 # Zswap
-echo zsmalloc > /sys/module/zswap/parameters/zpool  # Choose efficient memory pool for compressed swap.
 echo zstd > /sys/module/zswap/parameters/compressor # Use fast compression algorithm to reduce I/O latency.
 echo Y > /sys/module/zswap/parameters/enabled       # Enable compressed swap to reduce pressure on physical memory and disk I/O.
 
