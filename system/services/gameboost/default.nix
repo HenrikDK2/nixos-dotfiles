@@ -3,16 +3,19 @@
 let
   gameboost = pkgs.stdenv.mkDerivation {
     pname = "gameboost";
-    version = "1.0";
+    version = "2.0";
 
     src = ./.;
 
     dontConfigure = true;
 
+    # Dynamically linked on purpose: libc pages are shared with every other
+    # process, so the daemon's real footprint (PSS) is ~220 KB versus ~810 KB
+    # for a static build, whose private copy of libc code counts in full.
     buildPhase = ''
       runHook preBuild
 
-      $CC -O3 -pthread optimized_ps.c -o optimized_ps
+      $CC -O2 -s -Wall gameboostd.c -o gameboostd
 
       runHook postBuild
     '';
@@ -22,17 +25,8 @@ let
 
       install -d "$out/libexec/gameboost"
 
-      install -m755 main.sh \
-        "$out/libexec/gameboost/main.sh"
-
-      install -m755 start.sh \
-        "$out/libexec/gameboost/start.sh"
-
-      install -m755 exit.sh \
-        "$out/libexec/gameboost/exit.sh"
-
-      install -m755 optimized_ps \
-        "$out/libexec/gameboost/optimized_ps"
+      install -m755 gameboostd main.sh start.sh exit.sh notify.sh \
+        "$out/libexec/gameboost/"
 
       runHook postInstall
     '';
@@ -48,17 +42,15 @@ in
       "graphical.target"
     ];
 
+    # Used only by the one-shot hook scripts; the daemon itself needs nothing.
     path = with pkgs; [
       bash
-      coreutils
-      gawk
-      gnugrep
-      procps
-      systemd
-      util-linux
-      psmisc
-      pciutils
-      libnotify
+      coreutils   # id
+      procps      # pgrep, pkill
+      psmisc      # killall
+      systemd     # loginctl
+      util-linux  # renice, ionice, setpriv
+      libnotify   # notify-send
     ];
 
     serviceConfig = {
@@ -67,6 +59,11 @@ in
       ExecStart =
         "${pkgs.bash}/bin/bash ${gameboost}/libexec/gameboost/main.sh";
 
+      # The daemon runs exit.sh itself on SIGTERM. This covers a crash or
+      # SIGKILL while game mode was active.
+      ExecStopPost =
+        "-${pkgs.bash}/bin/bash -c '[ -f /run/gameboost/running.flag ] && exec ${gameboost}/libexec/gameboost/exit.sh || true'";
+
       Restart = "on-failure";
       RestartSec = "2s";
 
@@ -74,7 +71,8 @@ in
       # Primarily used to block auto-upgrades, and determine if game is running.
       RuntimeDirectory = "gameboost";
 
-      # Lowest CPU priority
+      # Lowest CPU priority. Hook scripts are reset to normal priority by the
+      # daemon so they are not starved while a game saturates the CPU.
       Nice = 19;
       CPUWeight = 1;
       CPUSchedulingPolicy = "idle";
@@ -83,6 +81,10 @@ in
       IOWeight = 1;
       IOSchedulingClass = "idle";
       IOSchedulingPriority = 7;
+
+      # Cheap, and makes `systemctl status` show CPU and memory use.
+      CPUAccounting = true;
+      MemoryAccounting = true;
     };
   };
 }

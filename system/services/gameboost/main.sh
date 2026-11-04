@@ -1,11 +1,20 @@
 #!/bin/bash
 
-# Byte-wise string/regex handling is cheaper than UTF-8.
+# GameBoost entry point: builds the match patterns, validates them, then
+# replaces itself with gameboostd (no bash process stays resident).
+#
+# gameboostd watches the kernel's exec events instead of scanning /proc on a
+# timer, and sleeps on the game's pidfd while it runs. It calls, from this
+# directory:
+#   start.sh PID...   when a game is detected
+#   exit.sh           when the last game exits (or the service stops)
+#   notify.sh MSG     desktop notification on each switch
+
 export LC_ALL=C
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly GAMEBOOST_FLAG="/run/gameboost/running.flag"
-CURRENT_PID=""
+readonly DAEMON="$SCRIPT_DIR/gameboostd"
 
 readonly GAME_PATTERNS=(
     ".*/proton waitforexitandrun"
@@ -61,17 +70,7 @@ readonly EXCLUDED_PATTERNS=(
     "\.sh$"
 )
 
-readonly OPTIMIZED_PS="$SCRIPT_DIR/optimized_ps"
-
-# Calibrated at startup: max(gpu_idle, GPU_IDLE_FLOOR) + GPU_IDLE_MARGIN.
-GPU_THRESHOLD=25
-readonly GPU_IDLE_FLOOR=5 GPU_IDLE_MARGIN=10
-
-# Populated by detect_gpu_vendor: "NVIDIA", "AMD", "INTEL", or "".
-GPU_VENDOR=""
-AMD_GPU_BUSY_PATH=""
-
-# Build a single "a|b|c" regex from an array.
+# Build a single "a|b|c" regex from an array, accepting / or \ as separator.
 build_slash_tolerant_pattern() {
     local SLASH_CLASS='[/\]' IFS='|'
     printf '%s' "${*//\//$SLASH_CLASS}"
@@ -80,198 +79,15 @@ build_slash_tolerant_pattern() {
 readonly GAME_PATTERN=$(build_slash_tolerant_pattern "${GAME_PATTERNS[@]}")
 readonly EXCLUDED_PATTERN=$(build_slash_tolerant_pattern "${EXCLUDED_PATTERNS[@]}")
 
-# =============================================================================
-# NOTIFICATIONS
-# =============================================================================
-
-notify_user() {
-    local session user uid gid active type line
-
-    while read -r session _; do
-        active= type= user=
-        while IFS='=' read -r key value; do
-            case $key in
-                Active) active=$value ;;
-                Type) type=$value ;;
-                Name) user=$value ;;
-            esac
-        done < <(loginctl show-session "$session" -p Active -p Type -p Name 2>/dev/null)
-
-        [[ $active == yes && $type =~ ^(x11|wayland)$ ]] || continue
-        uid=$(id -u "$user") || continue
-        gid=$(id -g "$user") || continue
-
-        setpriv --reuid="$uid" --regid="$gid" --init-groups \
-            env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" DISPLAY=:0 \
-            notify-send --app-name=GameBoost GameBoost "$1"
-
-        echo "Notification sent: $1"
-        return
-    done < <(loginctl list-sessions --no-legend 2>/dev/null)
-}
-
-# =============================================================================
-# GPU ACTIVITY DETECTION
-# =============================================================================
-
-detect_gpu_vendor() {
-    if command -v nvidia-smi &>/dev/null; then
-        GPU_VENDOR="NVIDIA"
-        return
-    fi
-
-    # Prefer a discrete/amdgpu card if there are multiple DRM cards.
-    local card driver
-    for card in /sys/class/drm/card*/device; do
-        [[ -r "$card/gpu_busy_percent" ]] || continue
-        driver=$(basename "$(readlink -f "$card/driver" 2>/dev/null)" 2>/dev/null)
-
-        if [[ -n "$GPU_CARD" && "$card" == *"$GPU_CARD"* ]]; then
-            AMD_GPU_BUSY_PATH="$card/gpu_busy_percent"
-            break
-        elif [[ -z "$AMD_GPU_BUSY_PATH" ]]; then
-            AMD_GPU_BUSY_PATH="$card/gpu_busy_percent"
-        fi
-
-        [[ "$driver" == "amdgpu" ]] && AMD_GPU_BUSY_PATH="$card/gpu_busy_percent"
-    done
-
-    if [[ -n "$AMD_GPU_BUSY_PATH" ]]; then
-        GPU_VENDOR="AMD"
-    elif command -v intel_gpu_top &>/dev/null; then
-        GPU_VENDOR="INTEL"
-    fi
-}
-
-update_gpu_usage() {
-    GPU_USAGE="$GPU_THRESHOLD"
-
-    case "$GPU_VENDOR" in
-        NVIDIA) ;;
-        AMD)    read -r GPU_USAGE < "$AMD_GPU_BUSY_PATH" 2>/dev/null ;;
-        INTEL)  ;;
-    esac
-
-    GPU_USAGE="${GPU_USAGE%%.*}"
-}
-
-calibrate_gpu_threshold() {
-    [[ -n "$GPU_VENDOR" ]] || return
-    update_gpu_usage
-
-    if [[ "$GPU_USAGE" =~ ^[0-9]+$ ]]; then
-        GPU_THRESHOLD=$(( (GPU_USAGE < GPU_IDLE_FLOOR ? GPU_IDLE_FLOOR : GPU_USAGE) + GPU_IDLE_MARGIN ))
-    fi
-}
-
-gpu_indicates_game_activity() {
-    [[ -n "$GPU_VENDOR" ]] || return 0
-    update_gpu_usage
-    [[ -n $GPU_USAGE && $GPU_USAGE != *[!0-9]* ]] || return 0
-    (( GPU_USAGE >= GPU_THRESHOLD ))
-}
-
-# =============================================================================
-# GAME MODE CONTROL
-# =============================================================================
-
-enable_game_mode() {
-    if [[ ! -f "$GAMEBOOST_FLAG" ]]; then
-        touch "$GAMEBOOST_FLAG"
-        $SCRIPT_DIR/start.sh "$@" &
-        notify_user "Switching to performance mode" &
-    fi
-}
-
-disable_game_mode() {
-    if [[ -f "$GAMEBOOST_FLAG" ]]; then
-        pkill -f "$SCRIPT_DIR/start.sh"
-        rm -f "$GAMEBOOST_FLAG"
-        $SCRIPT_DIR/exit.sh &
-        notify_user "Switching to power-saving mode" &
-        CURRENT_PID=""
-    fi
-}
-
-# =============================================================================
-# GAME PROCESS DETECTION
-# =============================================================================
-
-# Prints "pid<TAB>cmdline" for every process matching GAME_PATTERN and not
-# EXCLUDED_PATTERN. optimized_ps filters in-process: no grep or read loop.
-readonly SCAN_ARGS=(-m "$GAME_PATTERN" -x "$EXCLUDED_PATTERN")
-
-scan_games() {
-    "$OPTIMIZED_PS" "${SCAN_ARGS[@]}"
-}
-
-detect_game_process() {
-    local matches=$("$OPTIMIZED_PS" "${SCAN_ARGS[@]}")
-    [[ -n "$matches" ]] || return
-
-    local pid cmdline pids=()
-    while IFS=$'\t' read -r pid cmdline; do
-        pids+=("$pid")
-
-        if [[ -z "$CURRENT_PID" ]]; then
-            CURRENT_PID="$pid"
-            echo "Detected game process: PID=$pid, CMD='${cmdline//\\//}'"
-        fi
-    done <<< "$matches"
-
-    enable_game_mode "${pids[@]}"
-}
-
-verify_game_process() {
-    kill -0 "$CURRENT_PID" 2>/dev/null && return
-    echo "Game process ended: PID=$CURRENT_PID"
-
-    local pid cmdline
-    IFS=$'\t' read -r pid cmdline <<< "$(scan_games)"
-
-    if [[ -n "$pid" ]]; then
-        CURRENT_PID="$pid"
-        echo "Switched tracking to another game: PID=$pid, CMD='${cmdline//\\//}'"
-    else
-        disable_game_mode
-    fi
-}
-
-# =============================================================================
-# STARTUP
-# =============================================================================
-
-rm -f "$GAMEBOOST_FLAG"
-
-# Optimized ps replacement to reduce CPU time during process scanning.
-if [[ ! -x "$OPTIMIZED_PS" ]]; then
-    echo "ERROR: optimized_ps executable not found: $OPTIMIZED_PS" >&2
+if [[ ! -x "$DAEMON" ]]; then
+    echo "ERROR: gameboostd executable not found: $DAEMON" >&2
     exit 1
 fi
 
-if ! "$OPTIMIZED_PS" -n "${SCAN_ARGS[@]}"; then
+if ! "$DAEMON" -n -m "$GAME_PATTERN" -x "$EXCLUDED_PATTERN"; then
     echo "ERROR: invalid GAME_PATTERNS / EXCLUDED_PATTERNS" >&2
     exit 1
 fi
 
-detect_gpu_vendor
-echo "GPU vendor: ${GPU_VENDOR:-none found}"
-
-calibrate_gpu_threshold
-echo "GPU threshold: ${GPU_THRESHOLD}%"
-
-# =============================================================================
-# MAIN LOOP
-# =============================================================================
-
-exec {SLEEP_FD}<> <(:)
-
-while :; do
-    if [[ "$CURRENT_PID" ]]; then
-        verify_game_process
-    elif gpu_indicates_game_activity; then
-        detect_game_process
-    fi
-
-    read -rt 20 -u "$SLEEP_FD" _ || :
-done
+exec "$DAEMON" -m "$GAME_PATTERN" -x "$EXCLUDED_PATTERN" \
+    -d "$SCRIPT_DIR" -f "$GAMEBOOST_FLAG"

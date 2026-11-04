@@ -61,6 +61,8 @@ kill_lingering_processes() {
 
     [ "$(pgrep -fc '\.exe$')" -eq 1 ] && pgrep -x winedevice.exe >/dev/null &&
         killall -9 winedevice.exe 2>/dev/null
+
+    killall -q -9 chrome_crashpad 2>/dev/null
 }
 
 restore_sata_power_management() {
@@ -87,11 +89,6 @@ restore_pcie_power_management() {
     echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null
 }
 
-clear_ram_cache() {
-    killall -q -9 chrome_crashpad 2>/dev/null
-    echo 3 > /proc/sys/vm/drop_caches
-}
-
 main() {
     if ! is_laptop; then
         restore_sata_power_management
@@ -102,7 +99,6 @@ main() {
     set_cpu_governor
     set_gpu_auto
     kill_lingering_processes
-    clear_ram_cache
 }
 
 main "$@"

@@ -38,6 +38,7 @@ set_gpu_performance() {
 
 kill_background_processes() {
     pkill -9 -f '^(cmst|hypridle|mullvad-gui|blueman-applet|blueman-manager|blueman-tray|chrome_crashpad)( |$)' 2>/dev/null
+    pkill -9 -x chrome_crashpad 2>/dev/null
 }
 
 disable_sata_power_management() {
@@ -62,11 +63,6 @@ disable_pcie_power_management() {
         echo on > "$pci" 2>/dev/null
     done
     echo performance > /sys/module/pcie_aspm/parameters/policy 2>/dev/null
-}
-
-clear_ram_cache() {
-    pkill -9 -x chrome_crashpad 2>/dev/null
-    echo 3 > /proc/sys/vm/drop_caches
 }
 
 set_process_priority() {
@@ -99,7 +95,6 @@ main() {
     set_cpu_performance
     set_gpu_performance
     kill_background_processes
-    clear_ram_cache
 }
 
 main "$@"
