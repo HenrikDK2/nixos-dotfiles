@@ -739,6 +739,16 @@ static void on_game_exit(void) {
   }
 }
 
+/* The kernel counts proc-connector listeners per LISTEN/IGNORE message and
+ * does not decrement the count when a listening socket is closed, so exiting
+ * while subscribed would leave every later fork/exec/exit (system-wide, until
+ * reboot) building an event for nobody. Idempotent: IGNORE is only counted
+ * if this socket is currently listening. */
+static void unsubscribe(void) {
+  if (sock >= 0)
+    cn_control(sock, PROC_CN_MCAST_IGNORE);
+}
+
 /* ------------------------------------------------------------------------- */
 
 static int usage(void) {
@@ -843,8 +853,10 @@ int main(int argc, char **argv) {
       timeout = 0;
 
     int r = poll(p, 2, timeout);
-    if (r < 0 && errno != EINTR)
+    if (r < 0 && errno != EINTR) {
+      unsubscribe();
       return 1;
+    }
 
     if (p[0].revents & POLLIN) {
       logmsg("Stopping: %lu exec events, %lu checks, %lu full scans, "
@@ -855,6 +867,7 @@ int main(int argc, char **argv) {
         while (wait(NULL) > 0 || errno == EINTR)
           ;
       }
+      unsubscribe();
       return 0;
     }
 
