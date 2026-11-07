@@ -18,7 +18,15 @@
         $DRY_RUN_CMD ${pkgs.coreutils}/bin/cp -rn \
           --no-preserve=mode,ownership \
           -- "$src/." "$dst/" || true
-        $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+rwX -- "$dst"
+
+        # Fix permissions only on what was seeded. A chmod -R of all of $dst
+        # would walk qBittorrent's own data (torrent resume files, logs, RSS)
+        # on every activation and bump each file's ctime, which makes
+        # ctime-based backup tools re-read them.
+        for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
+          [ -e "$entry" ] || continue
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+rwX -- "$dst/''${entry##*/}"
+        done
       }
 
       seedDir "${./files/.config/qBittorrent}"      "$HOME/.config/qBittorrent"

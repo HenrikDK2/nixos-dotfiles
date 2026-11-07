@@ -3,19 +3,40 @@
 # Original values, restored by exit.sh.
 STATE=/run/gameboost/state
 
+# Files whose original value is already in $STATE. Kept in memory so the
+# "saved yet?" check is a hash lookup instead of a grep fork per sysfs file
+# (hundreds per game launch). Seeded from an existing $STATE so originals
+# left by an interrupted run are never overwritten.
+declare -A SAVED=()
+
+load_saved() {
+    local f _
+    [ -f "$STATE" ] || return 0
+    while IFS='=' read -r f _; do
+        SAVED[$f]=1
+    done < "$STATE"
+}
+
+# save_original FILE VALUE: record FILE's original VALUE once.
+save_original() {
+    [[ -n ${SAVED[$1]+x} ]] && return 0
+    printf '%s=%s\n' "$1" "$2" >> "$STATE"
+    SAVED[$1]=1
+}
+
 # set_saved FILE VALUE: save FILE's original once, then write VALUE.
 # Returns 1 if FILE isn't writable.
 set_saved() {
     local cur
     [ -w "$1" ] || return 1
 
-    if ! grep -q "^$1=" "$STATE" 2>/dev/null; then
+    if [[ -z ${SAVED[$1]+x} ]]; then
         read -r cur < "$1" 2>/dev/null
         if [[ $cur == *\[*\]* ]]; then
             cur=${cur#*\[}
             cur=${cur%%\]*}
         fi
-        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
+        save_original "$1" "$cur"
     fi
 
     echo "$2" > "$1" 2>/dev/null
@@ -69,9 +90,7 @@ set_gpu_performance() {
         cur=$(awk '/\*/ {print $1; exit}' "$prof" 2>/dev/null)
         [ -n "$idx" ] || continue
 
-        if [ -n "$cur" ] && ! grep -q "^$prof=" "$STATE" 2>/dev/null; then
-            printf '%s=%s\n' "$prof" "$cur" >> "$STATE"
-        fi
+        [ -n "$cur" ] && save_original "$prof" "$cur"
         echo "$idx" > "$prof" 2>/dev/null
     done
 }
@@ -135,6 +154,7 @@ set_process_priority() {
 
 main() {
     mkdir -p "${STATE%/*}"
+    load_saved
 
     set_process_priority "$@"
 

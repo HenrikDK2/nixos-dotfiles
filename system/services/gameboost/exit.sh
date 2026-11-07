@@ -3,14 +3,30 @@
 # Original values saved by start.sh.
 STATE=/run/gameboost/state
 
+# $STATE is read once into memory instead of once (via tac) per category.
+HAVE_STATE=0
+SAVED_FILES=()
+SAVED_VALUES=()
+
+load_state() {
+    local f v
+    [ -f "$STATE" ] || return 0
+    HAVE_STATE=1
+    while IFS='=' read -r f v || [ -n "$f" ]; do
+        SAVED_FILES+=("$f")
+        SAVED_VALUES+=("$v")
+    done < "$STATE"
+}
+
 # restore_saved REGEX: restore matching entries, newest first (GPU profile
 # before level). Returns 1 without a state file.
 restore_saved() {
-    [ -f "$STATE" ] || return 1
-    local f v
-    while IFS='=' read -r f v; do
-        [[ $f =~ $1 ]] && echo "$v" > "$f" 2>/dev/null
-    done < <(tac "$STATE")
+    ((HAVE_STATE)) || return 1
+    local i
+    for ((i = ${#SAVED_FILES[@]} - 1; i >= 0; i--)); do
+        [[ ${SAVED_FILES[i]} =~ $1 ]] &&
+            echo "${SAVED_VALUES[i]}" > "${SAVED_FILES[i]}" 2>/dev/null
+    done
     return 0
 }
 
@@ -119,6 +135,8 @@ restore_pcie_power_management() {
 }
 
 main() {
+    load_state
+
     if ! is_laptop; then
         restore_sata_power_management
         restore_nvme_power_management

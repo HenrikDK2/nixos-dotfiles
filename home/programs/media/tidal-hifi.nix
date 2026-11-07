@@ -1,5 +1,4 @@
-
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 let
   tidalConfigScript = pkgs.writeShellScript "tidal-config" ''
@@ -8,11 +7,16 @@ let
     mkdir -p "$(dirname "$CONFIG")"
     [ -f "$CONFIG" ] || echo '{}' > "$CONFIG"
 
-    ${pkgs.jq}/bin/jq \
+    # Only replace the config if jq succeeded: on malformed JSON jq writes
+    # nothing, and moving its output over the config would empty it.
+    if ${pkgs.jq}/bin/jq \
       '.menuBar = false | .notifications = false' \
-      "$CONFIG" > "$CONFIG.tmp"
-
-    mv "$CONFIG.tmp" "$CONFIG"
+      "$CONFIG" > "$CONFIG.tmp"; then
+      mv "$CONFIG.tmp" "$CONFIG"
+    else
+      rm -f "$CONFIG.tmp"
+      echo "tidal-hifi: $CONFIG is not valid JSON; left unchanged." >&2
+    fi
   '';
 in
 {
@@ -30,7 +34,8 @@ in
     Categories=AudioVideo;Audio;Player;
   '';
 
-  home.activation.tidalConfig = ''
-    ${tidalConfigScript}
-  '';
+  home.activation.tidalConfig =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${tidalConfigScript}
+    '';
 }

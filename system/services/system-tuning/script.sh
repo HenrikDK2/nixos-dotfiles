@@ -15,8 +15,14 @@ SYSCTL_ARGS=()
 sc() { SYSCTL_ARGS+=("$1"); }
 apply_sysctls() { sysctl -w "${SYSCTL_ARGS[@]}"; }
 
-# Get total memory in KB
-total_memory=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+# Get total memory in KB (bash builtins only: no grep/awk processes)
+total_memory=0
+while read -r key value _; do
+    if [ "$key" = "MemTotal:" ]; then
+        total_memory=$value
+        break
+    fi
+done < /proc/meminfo
 
 # Tiered min_free_kbytes based on total RAM
 if [ "$total_memory" -le $((8 * 1024 * 1024)) ]; then        # <= 8  GB

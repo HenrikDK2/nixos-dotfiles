@@ -11,14 +11,8 @@
       "NetworkManager.service"
     ];
 
-    path = with pkgs; [
-      coreutils
-      gawk
-      gnugrep
-      procps
-      systemd
-      networkmanager
-    ];
+    # Only sysctl is needed; coreutils/systemd are in every unit's default PATH.
+    path = [ pkgs.procps ];
 
     serviceConfig = {
       Type = "oneshot";
