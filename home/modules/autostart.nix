@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 {
   xdg.autostart.enable = true;
@@ -20,11 +20,13 @@
       X-KDE-autostart-after=panel
     '';
 
+    # finalPackage, not pkgs.thunderbird: only it carries the policies from
+    # programs/communication/thunderbird.nix (telemetry off, startup minimizer).
     "autostart/thunderbird.desktop".text = ''
       [Desktop Entry]
       Type=Application
       Name=Thunderbird
-      Exec=${pkgs.bash}/bin/bash -c "${pkgs.coreutils}/bin/sleep 3; exec ${pkgs.thunderbird}/bin/thunderbird"
+      Exec=${pkgs.bash}/bin/bash -c "${pkgs.coreutils}/bin/sleep 3; exec ${config.programs.thunderbird.finalPackage}/bin/thunderbird"
       X-KDE-autostart-after=panel
     '';
   };

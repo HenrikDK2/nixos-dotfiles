@@ -23,9 +23,11 @@
         # would walk qBittorrent's own data (torrent resume files, logs, RSS)
         # on every activation and bump each file's ctime, which makes
         # ctime-based backup tools re-read them.
+        # Symlinks are skipped, as chmod -R skips them while recursing.
         for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
-          [ -e "$entry" ] || continue
-          $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+rwX -- "$dst/''${entry##*/}"
+          target="$dst/''${entry##*/}"
+          [ -e "$entry" ] && [ -e "$target" ] && [ ! -L "$target" ] || continue
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+rwX -- "$target"
         done
       }
 

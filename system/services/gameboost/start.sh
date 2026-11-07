@@ -13,13 +13,20 @@ load_saved() {
     local f _
     [ -f "$STATE" ] || return 0
     while IFS='=' read -r f _; do
-        SAVED[$f]=1
+        [ -n "$f" ] && SAVED[$f]=1   # empty subscript would abort main
     done < "$STATE"
+}
+
+# is_saved FILE: true if FILE's original is in $STATE. If $STATE was removed
+# meanwhile (exit.sh of a previous game), nothing counts as saved any more.
+is_saved() {
+    [ -f "$STATE" ] || SAVED=()
+    [[ -n ${SAVED[$1]+x} ]]
 }
 
 # save_original FILE VALUE: record FILE's original VALUE once.
 save_original() {
-    [[ -n ${SAVED[$1]+x} ]] && return 0
+    is_saved "$1" && return 0
     printf '%s=%s\n' "$1" "$2" >> "$STATE"
     SAVED[$1]=1
 }
@@ -30,7 +37,7 @@ set_saved() {
     local cur
     [ -w "$1" ] || return 1
 
-    if [[ -z ${SAVED[$1]+x} ]]; then
+    if ! is_saved "$1"; then
         read -r cur < "$1" 2>/dev/null
         if [[ $cur == *\[*\]* ]]; then
             cur=${cur#*\[}
