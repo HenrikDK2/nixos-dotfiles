@@ -139,11 +139,11 @@
         "proton-cachyos": "proton-cachyos"
       },
       "locked": {
-        "lastModified": 1794016742,
-        "narHash": "sha256-TvtUY4dIVLHdsBxWFX/XF4AHs6WkN5sGU+04Sa139nE=",
+        "lastModified": 1794066196,
+        "narHash": "sha256-N8ZRH9WNWxk02Nny1zcZQsxO69cHZF9FTtOchB9ZcJI=",
         "owner": "HenrikDK2",
         "repo": "nixos-x86-64-v3-repo",
-        "rev": "33fba2a10974ac51f5c2670c0fb73d8aebb48c9e",
+        "rev": "ee2b1200f37095ab377a24b6cf3d4ea6dd2f1aab",
         "type": "github"
       },
       "original": {
@@ -201,11 +201,11 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1793726008,
-        "narHash": "sha256-jQp1wKvbwWdLBASTXkSi/VYmDJ5AbBi1WvcMt9HWJC8=",
+        "lastModified": 1793876309,
+        "narHash": "sha256-Wojg9lIH/hDH91iDVH2/EPw8oDSpxjxhXONbU1yf4Zg=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "1d060086d60cb76a40cf37109f979d88a5bd6396",
+        "rev": "f9a75f41be3a74eab55d3a7679d34ad6cc0da977",
         "type": "github"
       },
       "original": {
