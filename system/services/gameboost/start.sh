@@ -77,6 +77,19 @@ set_cpu_performance() {
     done
 }
 
+# profile_indices FILE: set idx to the first field of the first line naming
+# 3D_FULL_SCREEN and cur to that of the first line containing '*' (the active
+# profile). Same result as awk '/RE/ {print $1; exit}', without two forks.
+profile_indices() {
+    local line
+    idx= cur=
+    while IFS= read -r line || [ -n "$line" ]; do
+        [[ -z $idx && $line == *3D_FULL_SCREEN* ]] && read -r idx _ <<< "$line"
+        [[ -z $cur && $line == *\** ]] && read -r cur _ <<< "$line"
+        [[ -n $idx && -n $cur ]] && break
+    done 2>/dev/null < "$1"
+}
+
 # Force performance mode on all GPUs (VGA, 3D, display controllers)
 set_gpu_performance() {
     local gpu class prof idx cur
@@ -93,8 +106,7 @@ set_gpu_performance() {
         # 3D_FULL_SCREEN by name; save the active (*) row's index.
         prof=$gpu/pp_power_profile_mode
         [ -w "$prof" ] || continue
-        idx=$(awk '/3D_FULL_SCREEN/ {print $1; exit}' "$prof" 2>/dev/null)
-        cur=$(awk '/\*/ {print $1; exit}' "$prof" 2>/dev/null)
+        profile_indices "$prof"
         [ -n "$idx" ] || continue
 
         [ -n "$cur" ] && save_original "$prof" "$cur"
@@ -133,7 +145,7 @@ disable_pcie_power_management() {
 }
 
 set_process_priority() {
-    local pid t cg tids=()
+    local pid t cg line tids=()
 
     for pid; do
         [ -d "/proc/$pid/task" ] || continue
@@ -144,7 +156,11 @@ set_process_priority() {
         done
 
         # Nice only applies within a cgroup; raise the cgroup's weight.
-        cg=$(sed -n 's/^0:://p' "/proc/$pid/cgroup" 2>/dev/null)
+        # cgroup v2 entry ("0::/path"); read with builtins, no sed fork.
+        cg=
+        while IFS= read -r line || [ -n "$line" ]; do
+            [[ $line == 0::* ]] && { cg=${line#0::}; break; }
+        done 2>/dev/null < "/proc/$pid/cgroup"
         [ -n "$cg" ] && set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000
     done
 
