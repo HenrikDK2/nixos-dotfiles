@@ -151,8 +151,12 @@ start_cups() {
 # An auto-upgrade that came due while the game ran (auto-update/main.sh
 # skipped it and left this marker) starts now. gameboostd removes
 # running.flag before running this script, so the upgrade gate lets it through.
+# Only when the game ended: not when GameBoost itself is stopping or
+# restarting (or crashed) while the game may still run; the marker then
+# waits for the next game exit.
 resume_deferred_upgrade() {
     [ -e /run/nixos-upgrade.deferred ] || return 0
+    systemctl is-active --quiet gameboost.service || return 0
     rm -f /run/nixos-upgrade.deferred
     systemctl start --no-block nixos-upgrade.service 2>/dev/null
 }
