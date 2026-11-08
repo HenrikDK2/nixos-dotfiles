@@ -17,8 +17,8 @@ let
     buildPhase = ''
       runHook preBuild
 
-      $CC -O2 -s -Wall gameboostd.c -o gameboostd
-      $CC -O2 -s -Wall gameboost-hold.c -o gameboost-hold -lsystemd
+      $CC -O2 -s -Wall src/gameboostd.c -o gameboostd
+      $CC -O2 -s -Wall src/gameboost-hold.c -o gameboost-hold -lsystemd
 
       runHook postBuild
     '';
@@ -28,7 +28,8 @@ let
 
       install -d "$out/libexec/gameboost"
 
-      install -m755 gameboostd gameboost-hold main.sh start.sh exit.sh notify.sh \
+      install -m755 gameboostd gameboost-hold \
+        scripts/main.sh scripts/start.sh scripts/exit.sh scripts/notify.sh \
         "$out/libexec/gameboost/"
 
       runHook postInstall
@@ -51,7 +52,7 @@ in
     (pkgs.writeShellApplication {
       name = "gameboost-status";
       runtimeInputs = with pkgs; [ coreutils systemd ];
-      text = builtins.readFile ./status.sh;
+      text = builtins.readFile ./scripts/status.sh;
     })
   ];
 
