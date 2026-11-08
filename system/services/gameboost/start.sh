@@ -61,25 +61,47 @@ on_ac() {
     (($? != 1))
 }
 
+# ppd_drives_cpu: power-profiles-daemon is running and drives the CPU itself
+# (amd-pstate in active mode, or intel_pstate). Its "performance" profile then
+# sets the governor, EPP and boost, so GameBoost holds that profile instead of
+# writing the same files behind PPD's back.
+ppd_drives_cpu() {
+    local driver status
+    systemctl is-active --quiet power-profiles-daemon.service || return 1
+    driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
+        /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles \
+        CpuDriver 2>/dev/null) || return 1
+    case $driver in
+        's "intel_pstate"') return 0 ;;
+        's "amd_pstate"')
+            # PPD only drives amd-pstate in active (EPP) mode.
+            read -r status 2>/dev/null < /sys/devices/system/cpu/amd_pstate/status
+            [[ $status == active ]] ;;
+        *) return 1 ;;
+    esac
+}
+
 set_cpu_performance() {
     local cpu f
 
-    # Boost: acpi-cpufreq (global), amd-pstate (per CPU), intel_pstate.
-    for f in /sys/devices/system/cpu/cpufreq/boost /sys/devices/system/cpu/cpu*/cpufreq/boost; do
-        set_saved "$f" 1
-    done
-    set_saved /sys/devices/system/cpu/intel_pstate/no_turbo 0
+    # The hold is released by exit.sh, or by PPD itself if the helper dies.
+    # A refused hold (or no PPD) falls back to writing sysfs directly.
+    if ! { ppd_drives_cpu && systemctl start gameboost-hold.service 2>/dev/null; }; then
+        # Boost: acpi-cpufreq (global), amd-pstate (per CPU), intel_pstate.
+        for f in /sys/devices/system/cpu/cpufreq/boost /sys/devices/system/cpu/cpu*/cpufreq/boost; do
+            set_saved "$f" 1
+        done
+        set_saved /sys/devices/system/cpu/intel_pstate/no_turbo 0
 
-    for cpu in /sys/devices/system/cpu/cpu*/cpufreq; do
-        # EPP first: amd-pstate rejects EPP writes under "performance".
-        set_saved "$cpu/energy_performance_preference" performance
-        set_saved "$cpu/scaling_governor" performance
-    done
+        for cpu in /sys/devices/system/cpu/cpu*/cpufreq; do
+            # EPP first: amd-pstate rejects EPP writes under "performance".
+            set_saved "$cpu/energy_performance_preference" performance
+            set_saved "$cpu/scaling_governor" performance
+        done
+    fi
 
-    # No split-lock slowdown (Intel).
-    set_saved /proc/sys/kernel/split_lock_mitigate 0
-
-    # Dual-CCD X3D: prefer the V-Cache CCD (BIOS CPPC = "Driver").
+    # Dual-CCD X3D: prefer the V-Cache CCD (BIOS CPPC = "Driver"). PPD does
+    # not touch this.
     for f in /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode; do
         set_saved "$f" cache
     done

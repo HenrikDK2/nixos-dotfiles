@@ -37,7 +37,12 @@ is_laptop() {
 set_cpu_governor() {
     local cpu governor available epp
 
-    restore_saved 'cpufreq|intel_pstate|split_lock_mitigate|amd_x3d_mode|cpu\.weight' && return
+    systemctl stop --no-block gameboost-hold.service 2>/dev/null
+
+    restore_saved 'cpufreq|intel_pstate|amd_x3d_mode|cpu\.weight' && return
+
+    # power-profiles-daemon owns the governor and EPP: don't fight it.
+    systemctl is-active --quiet power-profiles-daemon.service && return
 
     # Fallback without state file.
     read -r available 2>/dev/null < /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors

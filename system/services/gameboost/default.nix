@@ -8,6 +8,9 @@ let
 
     dontConfigure = true;
 
+    # libsystemd for gameboost-hold only; gameboostd itself links just libc.
+    buildInputs = [ pkgs.systemd ];
+
     # Dynamically linked on purpose: libc pages are shared with every other
     # process, so the daemon's real footprint (PSS) is ~220 KB versus ~810 KB
     # for a static build, whose private copy of libc code counts in full.
@@ -15,6 +18,7 @@ let
       runHook preBuild
 
       $CC -O2 -s -Wall gameboostd.c -o gameboostd
+      $CC -O2 -s -Wall gameboost-hold.c -o gameboost-hold -lsystemd
 
       runHook postBuild
     '';
@@ -24,7 +28,7 @@ let
 
       install -d "$out/libexec/gameboost"
 
-      install -m755 gameboostd main.sh start.sh exit.sh notify.sh \
+      install -m755 gameboostd gameboost-hold main.sh start.sh exit.sh notify.sh \
         "$out/libexec/gameboost/"
 
       runHook postInstall
@@ -41,6 +45,35 @@ in
   # TTY logins keep the default. The session can already get nice -15 through
   # rtkit. Takes effect at the next login.
   systemd.services."user@".serviceConfig.LimitNICE = "-11";
+
+  # Started by start.sh while a game runs (when power-profiles-daemon drives
+  # the CPU) and stopped by exit.sh. PartOf: stopping or restarting GameBoost
+  # also drops the hold.
+  systemd.services.gameboost-hold = {
+    description = "GameBoost: hold the performance power profile during a game";
+    partOf = [ "gameboost.service" ];
+    after = [ "power-profiles-daemon.service" ];
+
+    serviceConfig = {
+      Type = "notify";
+      ExecStart = "${gameboost}/libexec/gameboost/gameboost-hold";
+      TimeoutStartSec = "5s";
+
+      # Root only so polkit allows the hold without a session; nothing else.
+      CapabilityBoundingSet = "";
+      NoNewPrivileges = true;
+      PrivateTmp = true;
+      PrivateDevices = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectControlGroups = true;
+      RestrictAddressFamilies = [ "AF_UNIX" ];
+      MemoryDenyWriteExecute = true;
+      SystemCallArchitectures = "native";
+    };
+  };
 
   systemd.services.gameboost = {
     description = "GameBoost game performance monitor";
