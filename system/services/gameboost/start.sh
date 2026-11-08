@@ -185,17 +185,19 @@ disable_pcie_power_management() {
 # forked well after detection by a process that is not itself a match (Steam's
 # pv-adverb/srt-bwrap, Proton's python script), and nice is only inherited at
 # fork, so boosting just the matched PIDs can miss the game entirely.
-# ppid map from /proc/PID/stat; comm may contain spaces or ')', so the fields
-# are parsed after the last ')'.
+# ppid map from /proc/PID/stat; comm may contain spaces, ')' or newlines, so
+# the whole file is read and the fields are parsed after the last ') '.
 tree_pids() {
     local stat line rest pid ppid i
     local -A kids=()
     TREE=()
 
     for stat in /proc/[0-9]*/stat; do
-        read -r line 2>/dev/null < "$stat" || continue
+        # read returns 1 at EOF (no NUL in the file); line is still filled.
+        read -r -d '' line 2>/dev/null < "$stat"
         rest=${line##*) }
         read -r _ ppid _ <<< "$rest"
+        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
         pid=${stat#/proc/}
         kids[$ppid]+=" ${pid%/stat}"
     done
