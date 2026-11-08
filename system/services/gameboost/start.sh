@@ -129,12 +129,6 @@ set_gpu_performance() {
     done
 }
 
-kill_background_processes() {
-    pkill -9 -f '^(cmst|hypridle|mullvad-gui|blueman-applet|blueman-manager|blueman-tray|chrome_crashpad)( |$)' 2>/dev/null
-    pkill -9 -x chrome_crashpad 2>/dev/null
-    return 0
-}
-
 disable_sata_power_management() {
     local host
     for host in /sys/class/scsi_host/host*/link_power_management_policy; do
@@ -210,7 +204,6 @@ main() {
 
     set_cpu_performance
     set_gpu_performance
-    kill_background_processes
 }
 
 main "$@"

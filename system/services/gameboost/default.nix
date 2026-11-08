@@ -45,7 +45,7 @@ in
     path = with pkgs; [
       bash
       coreutils   # id
-      procps      # pgrep, pkill
+      procps      # pgrep
       psmisc      # killall
       systemd     # loginctl
       util-linux  # renice, ionice, setpriv

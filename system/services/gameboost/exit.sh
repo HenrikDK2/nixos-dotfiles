@@ -97,8 +97,6 @@ kill_lingering_processes() {
 
     [ "$(pgrep -fc '\.exe$')" -eq 1 ] && pgrep -x winedevice.exe >/dev/null &&
         killall -9 winedevice.exe 2>/dev/null
-
-    killall -q -9 chrome_crashpad 2>/dev/null
 }
 
 restore_sata_power_management() {
