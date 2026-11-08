@@ -32,6 +32,16 @@ let
   };
 in
 {
+  # Let Wine/Proton set its own thread priorities. wineserver maps Windows
+  # priorities to nice values only when RLIMIT_NICE allows it: with -11 a
+  # normal thread runs at 0, a TIME_CRITICAL one at -11 and DXVK's
+  # low-priority shader workers at +4, instead of everything at GameBoost's
+  # blanket -11 (start.sh skips the renice for such processes). Applies to the
+  # user's systemd manager, which starts Steam and other apps; sudo, ssh and
+  # TTY logins keep the default. The session can already get nice -15 through
+  # rtkit. Takes effect at the next login.
+  systemd.services."user@".serviceConfig.LimitNICE = "-11";
+
   systemd.services.gameboost = {
     description = "GameBoost game performance monitor";
 

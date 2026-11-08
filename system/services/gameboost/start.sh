@@ -182,8 +182,30 @@ tree_pids() {
 # cgroups already handled (weight set, or warned once that it can't be).
 declare -A CG_DONE=()
 
+# wine_sets_nice PID: true for a Wine process that can set its own thread
+# priorities. wineserver maps Windows thread priorities to absolute nice
+# values when RLIMIT_NICE lets it (the session grants nice -11, rlimit 31, in
+# default.nix), and that overrides any blanket renice. Such processes get only
+# the I/O and cgroup boost; everything else keeps nice -11.
+wine_sets_nice() {
+    local argv0 line soft
+    read -r -d '' argv0 2>/dev/null < "/proc/$1/cmdline"
+    case $argv0 in
+        [A-Za-z]:[\\/]* | wine | wine64 | */wine | */wine64 | *wine-preloader | *wine64-preloader) ;;
+        *) return 1 ;;
+    esac
+    while IFS= read -r line; do
+        if [[ $line == "Max nice priority"* ]]; then
+            read -r _ _ _ soft _ <<< "$line"
+            [[ $soft == unlimited ]] || ((soft > 20))
+            return
+        fi
+    done 2>/dev/null < "/proc/$1/limits"
+    return 1
+}
+
 set_process_priority() {
-    local pid t cg line comm tids=()
+    local pid t cg line comm tids=() io_only=()
     local -A seen=()
 
     for pid; do
@@ -196,9 +218,15 @@ set_process_priority() {
         [[ $comm == wineserver ]] && continue
 
         # Nice is per thread: include every existing thread.
-        for t in /proc/"$pid"/task/*; do
-            tids+=("${t##*/}")
-        done
+        if wine_sets_nice "$pid"; then
+            for t in /proc/"$pid"/task/*; do
+                io_only+=("${t##*/}")
+            done
+        else
+            for t in /proc/"$pid"/task/*; do
+                tids+=("${t##*/}")
+            done
+        fi
 
         # Nice only applies within a cgroup; raise the cgroup's weight.
         # cgroup v2 entry ("0::/path"); read with builtins, no sed fork.
@@ -214,9 +242,10 @@ set_process_priority() {
         fi
     done
 
-    [ ${#tids[@]} -gt 0 ] || return
+    [ ${#tids[@]} -gt 0 ] && renice -n -11 -p "${tids[@]}" >/dev/null 2>&1
 
-    renice -n -11 -p "${tids[@]}" >/dev/null 2>&1
+    tids+=("${io_only[@]}")
+    [ ${#tids[@]} -gt 0 ] || return
     ionice -c2 -n0 -p "${tids[@]}" >/dev/null 2>&1 && return
 
     # ionice stops at the first vanished thread: retry one by one
