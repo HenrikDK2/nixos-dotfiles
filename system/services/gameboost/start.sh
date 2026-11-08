@@ -54,6 +54,13 @@ is_laptop() {
     [ -d /sys/class/power_supply/BAT0 ] || [ -d /sys/class/power_supply/BAT1 ]
 }
 
+# on_ac: true when running on external power (systemd's own check, which
+# also understands USB-C supplies). Unknown counts as AC.
+on_ac() {
+    systemd-ac-power 2>/dev/null
+    (($? != 1))
+}
+
 set_cpu_performance() {
     local cpu f
 
@@ -286,8 +293,13 @@ main() {
         disable_pcie_power_management
     fi
 
-    set_cpu_performance
-    set_gpu_performance
+    # Laptops on battery keep their power profile: only the priority boost
+    # applies. Checked once at game start; plugging in or unplugging during
+    # the game is not followed.
+    if ! is_laptop || on_ac; then
+        set_cpu_performance
+        set_gpu_performance
+    fi
 
     follow_up "$@"
 }
