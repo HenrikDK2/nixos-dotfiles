@@ -1,14 +1,6 @@
 { ... }:
 
 {
-  # Disable Discover notifier daemon.
-  xdg.configFile."autostart/org.kde.discover.notifier.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Discover Notifier
-    Hidden=true
-  '';
-
   xdg.dataFile = {
     "kwin/scripts/mastertile".source =
       ./files/kwin/mastertile;
@@ -31,6 +23,10 @@
     };
 
     baloofilerc."Basic Settings"."Indexing-Enabled" = false;
+
+    # Don't record opened files and apps (Recent files in the launcher and
+    # Dolphin). 2 = remember no applications.
+    kactivitymanagerd-pluginsrc."Plugin-org.kde.ActivityManager.Resources.Scoring"."what-to-remember" = 2;
 
     kdeglobals.KDE.AnimationDurationFactor = 0.5;
     kdeglobals.KScreen.ScaleFactor = 1.15;

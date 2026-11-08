@@ -3,6 +3,10 @@
 {
   networking.hostName = "nixos";
 
+  # ModemManager only serves mobile-broadband modems, and it probes serial and
+  # USB devices as they appear. NetworkManager turns it on by default.
+  networking.modemmanager.enable = false;
+
   networking.networkmanager = {
     enable = true;
     dns = "default";
