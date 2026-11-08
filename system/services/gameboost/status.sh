@@ -29,17 +29,34 @@ if [[ $pid =~ ^[0-9]+$ ]]; then
     echo "  tracking: PID $pid ($alive)"
 fi
 [[ $appid =~ ^[1-9][0-9]*$ ]] && echo "  steam:    AppId $appid"
+# The command line is arbitrary process data: no terminal control bytes
+# (ESC, BEL...). UTF-8 game names stay readable.
+cmd=$(LC_ALL=C; printf '%s' "${cmd//[[:cntrl:]]/?}")
 [[ -n $cmd ]] && echo "  command:  ${cmd:0:200}"
 
 if systemctl is-active --quiet gameboost-hold.service 2>/dev/null; then
     echo "  power:    performance profile held through power-profiles-daemon"
 fi
 
-[[ -f $state ]] || exit 0
+[[ -s $state ]] || exit 0
 
-# current FILE: the file's value, with the active entry of "[a] b c" lists.
+# current FILE: the file's value, with the active entry of "[a] b c" lists,
+# or the index of the "*" row for amdgpu's pp_power_profile_mode table (its
+# first line is a header), which is what start.sh saved.
 current() {
-    local v=''
+    local v='' line
+    if [[ $1 == */pp_power_profile_mode ]]; then
+        [[ -r $1 ]] || { printf 'gone'; return; }
+        while IFS= read -r line || [[ -n $line ]]; do
+            if [[ $line == *\** ]]; then
+                read -r v _ <<< "$line"
+                printf '%s' "$v"
+                return
+            fi
+        done < "$1"
+        printf '?'
+        return
+    fi
     read -r v 2>/dev/null < "$1" || { printf 'gone'; return; }
     if [[ $v == *\[*\]* ]]; then
         v=${v#*\[}
