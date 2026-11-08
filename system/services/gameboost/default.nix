@@ -2,8 +2,7 @@
 
 let
   gameboost = pkgs.stdenv.mkDerivation {
-    pname = "gameboost";
-    version = "2.0";
+    name = "gameboost";
 
     src = ./.;
 
