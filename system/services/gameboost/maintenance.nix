@@ -9,6 +9,7 @@
 # weekly timer would push the job back a whole week. Instead each timer
 # checks daily, and the gate lets the job through once its last successful
 # run is old enough: a job that lands during play retries the next day.
+# Manual starts (`systemctl start nix-gc`) skip the age check.
 
 let
   stampDir = "/var/lib/gameboost-maint";
@@ -19,6 +20,10 @@ let
       # gameboost-maint-gate check NAME MIN_AGE_SECONDS  (ExecCondition)
       # gameboost-maint-gate done NAME                   (ExecStartPost)
       stamp="${stampDir}/$2"
+      # The timer that started this run. Empty for manual starts, and for
+      # nix-optimise started by nix-gc's OnSuccess= (GC's own gate sets
+      # that pace).
+      trigger=''${TRIGGER_UNIT:-}
 
       case $1 in
         check)
@@ -27,7 +32,8 @@ let
             exit 1
           fi
           # A missing, unreadable or future stamp means "due".
-          if read -r last 2>/dev/null < "$stamp" && [[ $last =~ ^[0-9]+$ ]] &&
+          if [[ -n $trigger ]] &&
+            read -r last 2>/dev/null < "$stamp" && [[ $last =~ ^[0-9]+$ ]] &&
             ((EPOCHSECONDS - last >= 0 && EPOCHSECONDS - last < $3)); then
             echo "Last run $(((EPOCHSECONDS - last) / 3600))h ago; not due yet."
             exit 1
