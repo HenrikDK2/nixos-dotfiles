@@ -1,4 +1,4 @@
-{ ... }:
+{ helpers, lib, ... }:
 
 let
   addonUrl = name:
@@ -27,9 +27,10 @@ in
       BlockAboutConfig = false;
       DontCheckDefaultBrowser = true;
 
-      # No detectportal.firefox.com requests at startup and on every network
-      # change; hotel/cafe Wi-Fi login pages are no longer detected.
-      CaptivePortal = false;
+      # Desktops only: no detectportal.firefox.com requests at startup and on
+      # every network change. Laptops keep Firefox's default (on, not locked)
+      # so hotel/cafe Wi-Fi login pages are still detected.
+      CaptivePortal = lib.mkIf (!helpers.isLaptop) false;
 
       # Block every AI feature (sidebar chatbot, link-preview summaries, smart
       # tab groups, PDF alt text, speech recognition), so no models are
