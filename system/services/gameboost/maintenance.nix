@@ -54,13 +54,15 @@ in
 {
   systemd.tmpfiles.rules = [ "d ${stampDir} 0755 root root -" ];
 
-  # Daily checks; see nix.gc.dates and nix.optimise.dates in
-  # configuration.nix and fwupd.nix for the other timers.
+  # Daily checks; see nix.gc.dates in configuration.nix (nix-optimise runs
+  # after each successful GC) and fwupd.nix for the other timers.
   services.fstrim.interval = "daily";
 
   systemd.services = {
     nix-gc.serviceConfig = gated "nix-gc" week;
-    nix-optimise.serviceConfig = gated "nix-optimise" week;
+    # Oneshot, so the stamp is written when the run has finished successfully,
+    # not when it starts (the upstream unit has no Type, i.e. simple).
+    nix-optimise.serviceConfig = gated "nix-optimise" week // { Type = "oneshot"; };
     fstrim.serviceConfig = lib.mkIf config.services.fstrim.enable (gated "fstrim" week);
     fwupd-refresh.serviceConfig = lib.mkIf config.services.fwupd.enable (gated "fwupd-refresh" day);
   };

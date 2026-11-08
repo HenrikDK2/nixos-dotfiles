@@ -51,12 +51,12 @@
     IOSchedulingClass = "idle";
   };
 
-  # Deduplicate the store in a weekly background run, not during every build
-  # and download (auto-optimise-store).
-  nix.optimise = {
-    automatic = true;
-    dates = [ "03:45" ];   # weekly in effect, see nix.gc above
-  };
+  # Deduplicate the store in a background run right after each weekly GC
+  # (so it never hashes paths the GC is about to delete), not during every
+  # build and download (auto-optimise-store). No timer of its own: the
+  # nix-optimise unit exists whenever Nix is enabled.
+  nix.optimise.automatic = false;
+  systemd.services.nix-gc.unitConfig.OnSuccess = [ "nix-optimise.service" ];
 
   systemd.services.nix-optimise.serviceConfig.Slice = "background.slice";
 
