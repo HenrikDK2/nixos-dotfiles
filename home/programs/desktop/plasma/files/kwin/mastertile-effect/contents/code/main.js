@@ -15,7 +15,6 @@ class MasterTileAnimation {
         this.onWindowClosed = this.onWindowClosed.bind(this);
 
         effect.configChanged.connect(this.loadConfig.bind(this));
-        effect.animationEnded.connect(this.onAnimationEnded.bind(this));
         effects.windowAdded.connect(this.onWindowAdded.bind(this));
         effects.windowClosed.connect(this.onWindowClosed);
         effects.stackingOrder.forEach(window => this.manage(window));
@@ -61,6 +60,13 @@ class MasterTileAnimation {
                !this.isExcluded(window);
     }
 
+    // Unmanaged windows (X11 override-redirect menus and tooltips) and Wayland
+    // popups stay that way for their whole life, and canAnimate() rejects both,
+    // so their geometry and fullscreen changes need no handler at all.
+    neverAnimates(window) {
+        return !window.managed || (window.waylandClient && window.popupWindow);
+    }
+
     manage(window) {
         if (window.mta) return;
 
@@ -68,7 +74,6 @@ class MasterTileAnimation {
             born: Date.now(),
             fsChangedAt: 0,
             wasFullScreen: Boolean(window.fullScreen),
-            running: 0,
             excluded: false,
             excludedVersion: -1,
         };
@@ -76,6 +81,8 @@ class MasterTileAnimation {
         // Keep blur independent of geometry animations and window.hasAlpha,
         // which may not be reliable during initial window setup.
         window.setData(Effect.WindowForceBlurRole, true);
+
+        if (this.neverAnimates(window)) return;
 
         window.windowFrameGeometryChanged.connect(this.onGeometryChanged);
         if (window.windowFullScreenChanged) {
@@ -94,14 +101,12 @@ class MasterTileAnimation {
         const state = window && window.mta;
         if (!state) return;
 
-        state.running = 0;
         window.setData(Effect.WindowForceBlurRole, null);
     }
 
     onWindowAdded(window) {
         this.manage(window);
         if (this.animateOpen && window.normalWindow && this.canAnimate(window)) {
-            this.begin(window, 2);
             animate({
                 window,
                 duration: this.duration,
@@ -112,16 +117,6 @@ class MasterTileAnimation {
                 ],
             });
         }
-    }
-
-    begin(window, count) {
-        window.mta.running += count;
-    }
-
-    onAnimationEnded(window) {
-        const state = window && window.mta;
-        if (!state || state.running === 0) return;
-        state.running--;
     }
 
     onGeometryChanged(window, old) {
@@ -151,7 +146,6 @@ class MasterTileAnimation {
             Math.abs(now.width - old.width) < MIN_CHANGE_PX &&
             Math.abs(now.height - old.height) < MIN_CHANGE_PX) return;
 
-        this.begin(window, 2);
         animate({
             window,
             duration: this.duration,

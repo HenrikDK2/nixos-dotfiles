@@ -112,9 +112,8 @@ let tilingMode = null;
 function rootTileFor(window) {
     if (!window || !window.output) return null;
 
-    const desktop = window.desktops?.length
-        ? window.desktops[0]
-        : workspace.currentDesktop;
+    const desktops = window.desktops;
+    const desktop = desktops?.length ? desktops[0] : workspace.currentDesktop;
 
     if (tilingMode) return rootStrategies[tilingMode](window, desktop) || null;
 
@@ -232,6 +231,39 @@ function findTileEntryByStateInSnapshot(window, state, snapshot) {
         findLeafEntryMatchingGeometry(window, snapshot);
 }
 
+// Same lookup order as findTileEntryByStateInSnapshot (remembered tile, then
+// remembered key, then geometry), but reads a leaf's geometry only when a step
+// needs it instead of building a full snapshot. Returns { tile, geometry }.
+function findTileByStateLazy(window, state, root, frameGeometry) {
+    const leaves = collectLeaves(root);
+    const geometries = new Array(leaves.length);
+    const geometryAt = i => geometries[i] || (geometries[i] = leaves[i].absoluteGeometry);
+
+    if (state.tile) {
+        const index = leaves.indexOf(state.tile);
+        if (index >= 0) return { tile: leaves[index], geometry: geometryAt(index) };
+    }
+
+    if (state.key) {
+        for (let i = 0; i < leaves.length; i++) {
+            if (rectKey(geometryAt(i)) === state.key) {
+                return { tile: leaves[i], geometry: geometryAt(i) };
+            }
+        }
+    }
+
+    // A root with no children is not treated as a geometry-matched layout.
+    if (leaves.length === 1 && leaves[0] === root) return null;
+
+    for (let i = 0; i < leaves.length; i++) {
+        if (matchesGeometry(frameGeometry, geometryAt(i))) {
+            return { tile: leaves[i], geometry: geometryAt(i) };
+        }
+    }
+
+    return null;
+}
+
 function findTileByState(window, state, snapshotCache) {
     const root = rootTileFor(window);
     if (!root) return null;
@@ -242,15 +274,25 @@ function findTileByState(window, state, snapshotCache) {
     return entry ? entry.tile : null;
 }
 
-function sharesContext(a, b) {
-    if (a.output !== b.output) return false;
-    if (a.onAllDesktops || b.onAllDesktops) return true;
+// The output and desktops of the window being placed or focused, read once
+// and then compared against every other window.
+function windowContext(window) {
+    return {
+        output: window.output,
+        onAllDesktops: window.onAllDesktops,
+        desktops: window.desktops,
+    };
+}
 
-    if (a.desktops?.length && b.desktops?.length) {
-        return a.desktops.some(desktop => b.desktops.includes(desktop));
-    }
+function sharesContext(context, other) {
+    if (context.output !== other.output) return false;
+    if (context.onAllDesktops || other.onAllDesktops) return true;
+    if (!context.desktops?.length) return true;
 
-    return true;
+    const desktops = other.desktops;
+    if (!desktops?.length) return true;
+
+    return context.desktops.some(desktop => desktops.includes(desktop));
 }
 
 // ---------------------------------------------------------------------------
@@ -355,12 +397,12 @@ function track(window, snapshotCache) {
         const root = rootTileFor(window);
         if (!root) return;
 
-        const snapshot = createTileSnapshot(root, false);
-        const entry = findTileEntryByStateInSnapshot(window, state, snapshot);
+        const frameGeometry = window.frameGeometry;
+        const match = findTileByStateLazy(window, state, root, frameGeometry);
 
-        if (entry && matchesGeometry(window.frameGeometry, entry)) {
-            window.tile = entry.tile;
-            rememberTileState(state, entry.tile);
+        if (match && matchesGeometry(frameGeometry, match.geometry)) {
+            window.tile = match.tile;
+            rememberTileState(state, match.tile);
         }
     });
 
@@ -400,6 +442,7 @@ function track(window, snapshotCache) {
 function computeOccupancies(snapshot, selfWindow, snapshotCache) {
     const { entries } = snapshot;
     const occupancy = new Map(entries.map(entry => [entry.tile, new Set()]));
+    const context = windowContext(selfWindow);
 
     // Explicit tile occupants may not be discoverable by geometry matching.
     for (const entry of entries) {
@@ -407,7 +450,7 @@ function computeOccupancies(snapshot, selfWindow, snapshotCache) {
 
         for (const window of entry.tile.windows) {
             if (window !== selfWindow && !window.minimized &&
-                sharesContext(selfWindow, window)) {
+                sharesContext(context, window)) {
                 occupants.add(window);
             }
         }
@@ -417,19 +460,21 @@ function computeOccupancies(snapshot, selfWindow, snapshotCache) {
 
     for (const window of windows) {
         if (window === selfWindow || !window.normalWindow || window.minimized ||
-            window.dialog || window.transient || !sharesContext(selfWindow, window)) {
+            window.dialog || window.transient || !sharesContext(context, window)) {
             continue;
         }
 
         track(window, snapshotCache);
 
-        if (!window.fullScreen && !window.tile && window.mt && !window.mt.userUntiled) {
+        const fullScreen = window.fullScreen;
+        const state = window.mt;
+        let assignedTile = window.tile;
+
+        if (!fullScreen && !assignedTile && state && !state.userUntiled) {
             tryRestoreTile(window, snapshotCache);
+            assignedTile = window.tile;
         }
 
-        const fullScreen = window.fullScreen;
-        const assignedTile = window.tile;
-        const state = window.mt;
         const hasReservation = Boolean(state && !state.userUntiled);
         const frameGeometry = fullScreen ? null : window.frameGeometry;
 
@@ -538,7 +583,7 @@ function directionalTile(snapshot, source, direction, accept) {
     let bestScore = Infinity;
 
     for (const entry of snapshot.entries) {
-        if (entry.tile === source || (accept && !accept(entry.tile))) continue;
+        if (entry.tile === source) continue;
 
         const dx = entry.x + entry.width / 2 - sourceX;
         const dy = entry.y + entry.height / 2 - sourceY;
@@ -550,16 +595,19 @@ function directionalTile(snapshot, source, direction, accept) {
         const secondary = Math.abs(horizontal ? dy : dx);
         const score = primary + secondary * 1.5;
 
-        if (score < bestScore) {
-            bestScore = score;
-            best = entry.tile;
-        }
+        // Ask accept (which may scan every window) only about a tile that would
+        // become the best; written as !(a < b) so a NaN score is skipped as before.
+        if (!(score < bestScore)) continue;
+        if (accept && !accept(entry.tile)) continue;
+
+        bestScore = score;
+        best = entry.tile;
     }
 
     return best;
 }
 
-function windowForTile(tile, current) {
+function windowForTile(tile, current, context = windowContext(current)) {
     if (!tile) return null;
 
     const eligible = window =>
@@ -569,7 +617,7 @@ function windowForTile(tile, current) {
         !window.fullScreen &&
         !window.dialog &&
         !window.transient &&
-        sharesContext(current, window);
+        sharesContext(context, window);
 
     const assigned = tile.windows.find(eligible);
     if (assigned) return assigned;
@@ -603,12 +651,19 @@ function moveFocus(direction) {
     const context = activeTileContext();
     if (!context) return;
 
-    // Skip empty tiles so focus can jump across gaps.
-    const tile = directionalTile(
+    // Skip empty tiles so focus can jump across gaps. Every accepted tile
+    // becomes the new best, so the last window found belongs to the result.
+    const windowContextOfActive = windowContext(context.window);
+    let window = null;
+
+    directionalTile(
         context.snapshot, context.tile, direction,
-        candidate => windowForTile(candidate, context.window) !== null
+        candidate => {
+            const found = windowForTile(candidate, context.window, windowContextOfActive);
+            if (found) window = found;
+            return found !== null;
+        }
     );
-    const window = windowForTile(tile, context.window);
 
     if (window) workspace.activeWindow = window;
 }
