@@ -27,6 +27,10 @@ in
       BlockAboutConfig = false;
       DontCheckDefaultBrowser = true;
 
+      # No detectportal.firefox.com requests at startup and on every network
+      # change; hotel/cafe Wi-Fi login pages are no longer detected.
+      CaptivePortal = false;
+
       # Block every AI feature (sidebar chatbot, link-preview summaries, smart
       # tab groups, PDF alt text, speech recognition), so no models are
       # downloaded or run. Local translations stay available.
@@ -86,6 +90,10 @@ in
 
       settings = {
         "browser.startup.homepage" = "https://duckduckgo.com";
+
+        # Write the session (open tabs) at most once a minute instead of every
+        # 15 s; a crash can lose up to a minute of tab changes.
+        "browser.sessionstore.interval" = 60000;
       };
     };
   };

@@ -50,6 +50,13 @@
       # Installed only because fwupd is on; firmware updates still work with
       # `fwupdmgr`.
       discover
+      # Unused here: remote desktop server, music player, offline help and the
+      # on-screen keyboard (no touchscreen).
+      krdp
+      elisa
+      khelpcenter
+      plasma-keyboard
+      qtvirtualkeyboard
     ];
   };
 }
