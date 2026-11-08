@@ -112,18 +112,19 @@ set_gpu_performance() {
         profile_indices "$prof"
         [ -n "$idx" ] || continue
 
-        # swsmu GPUs (RDNA, Renoir and newer APUs) accept a profile in "auto",
-        # which keeps the driver's own workload switching; "manual" would
-        # turn that off. powerplay GPUs (Polaris, Vega) reject the write
-        # unless the level is "manual", so fall back to it only then. The
-        # level is saved before the profile: exit.sh restores newest first,
-        # so the profile is put back while the level is still "manual".
-        if try_write "$prof" "$idx"; then
-            [ -n "$cur" ] && save_original "$prof" "$cur"
-            continue
-        fi
-        set_saved "$gpu/power_dpm_force_performance_level" manual || continue
+        # swsmu GPUs (Navi/RDNA dGPUs, Renoir, Van Gogh) accept a profile in
+        # "auto", which keeps the driver's own workload switching; "manual"
+        # would turn that off. powerplay GPUs (Polaris/Tonga/Fiji, Vega10/20,
+        # Raven/Picasso APUs) reject it unless the level is "manual", so fall
+        # back to that only when the first write fails. The original is saved
+        # before any write, so an interrupted start.sh never leaves a profile
+        # that exit.sh cannot undo.
         [ -n "$cur" ] && save_original "$prof" "$cur"
+        try_write "$prof" "$idx" && continue
+        set_saved "$gpu/power_dpm_force_performance_level" manual || continue
+        # Record the profile again after the level: exit.sh restores newest
+        # first, so it puts the profile back while the level is still manual.
+        [ -n "$cur" ] && printf '%s=%s\n' "$prof" "$cur" >> "$STATE"
         try_write "$prof" "$idx"
     done
 }
@@ -160,6 +161,7 @@ disable_pcie_power_management() {
 
 set_process_priority() {
     local pid t cg line tids=()
+    local -A warned=()
 
     for pid; do
         [ -d "/proc/$pid/task" ] || continue
@@ -176,8 +178,10 @@ set_process_priority() {
             [[ $line == 0::* ]] && { cg=${line#0::}; break; }
         done 2>/dev/null < "/proc/$pid/cgroup"
         # cpu.weight only exists where systemd enabled the cpu controller.
-        if [ -n "$cg" ] && ! set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000; then
-            echo "gameboost: no writable cpu.weight in $cg (cpu controller off?); CPU weight boost skipped" >&2
+        if [ -n "$cg" ] && ! set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000 &&
+            [ -z "${warned[$cg]+x}" ]; then
+            warned[$cg]=1
+            echo "gameboost: could not set cpu.weight in $cg (cpu controller off?); CPU weight boost skipped" >&2
         fi
     done
 

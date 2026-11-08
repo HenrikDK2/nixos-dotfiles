@@ -17,8 +17,8 @@ apply_sysctls() { sysctl -w "${SYSCTL_ARGS[@]}"; }
 
 # vm.min_free_kbytes and vm.watermark_scale_factor are left to the kernel:
 # lowering them made allocations stall in direct reclaim ~4.5x more often
-# under memory pressure, and with THP enabled the kernel raises
-# min_free_kbytes again on every THP mode write anyway.
+# under memory pressure. With THP enabled the kernel already raises
+# min_free_kbytes to its THP recommendation at boot.
 # vm.swappiness is set declaratively with zram (system/modules/swap.nix).
 
 # --------------------
