@@ -91,6 +91,7 @@ struct alt {
   char *pat;       /* this alternative alone, NUL-terminated */
   const char *lit; /* literal every match contains, or NULL */
   size_t litn;
+  size_t anc; /* index in lit of its least common byte (memchr anchor) */
   int compiled;
   regex_t re;
 };
@@ -213,6 +214,48 @@ static int extract_literal(const char *re, char *pool, const char **lit,
   return 1;
 }
 
+/* How common byte c is in command lines (lower = rarer). Nix store hashes
+ * use digits and most lowercase letters, but never e, o, t or u; capitals
+ * and punctuation other than path/option separators are rare. */
+static int byte_rank(unsigned char c) {
+  static const char lower[] = "zqjxkvbgpwyfmculdhrsnioate"; /* rarest first */
+  if (c >= 'A' && c <= 'Z')
+    return 1;
+  if (c >= '0' && c <= '9')
+    return 3;
+  if (c >= 'a' && c <= 'z')
+    return 4 + (int)(strchr(lower, c) - lower);
+  if (strchr("/-._ ", c))
+    return 40;
+  return 2;
+}
+
+static size_t pick_anchor(const char *lit, size_t n) {
+  size_t best = 0;
+  for (size_t i = 1; i < n; ++i)
+    if (byte_rank((unsigned char)lit[i]) < byte_rank((unsigned char)lit[best]))
+      best = i;
+  return best;
+}
+
+/* memmem(s, n, a->lit, a->litn) != NULL, found by memchr() on the anchor
+ * byte: few candidate positions, each confirmed with memcmp(). */
+static int has_lit(const char *s, size_t n, const struct alt *a) {
+  size_t k = a->anc, ln = a->litn;
+  if (n < ln)
+    return 0;
+  const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
+  while (p <= last && (p = memchr(p, a->lit[k], (size_t)(last - p) + 1))) {
+    if (!memcmp(p - k, a->lit, ln))
+      return 1;
+    ++p;
+  }
+  return 0;
+}
+
+/* "wine" in a command line; 'w' is its least common byte. */
+static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
+
 static void *xalloc(void *p) {
   if (!p) {
     (void)!write(2, "gameboostd: out of memory\n", 26);
@@ -258,6 +301,8 @@ static int split_alts(const char *re, struct altset *set) {
       if (!extract_literal(a->pat, pool, &a->lit, &a->litn)) {
         free(pool);
         a->lit = NULL;
+      } else {
+        a->anc = pick_anchor(a->lit, a->litn);
       }
       if (!*p)
         break;
@@ -279,7 +324,7 @@ static int compile_alt(struct alt *a) {
 static int set_matches(struct altset *set, const char *s, size_t n) {
   for (int i = 0; i < set->n; ++i) {
     struct alt *a = &set->v[i];
-    if (a->lit && !memmem(s, n, a->lit, a->litn))
+    if (a->lit && !has_lit(s, n, a))
       continue;
     if (compile_alt(a))
       _exit(2); /* validated at startup; cannot happen */
@@ -319,11 +364,14 @@ static ssize_t read_cmdline_fd(const char *pid, char *buf, char **out,
   if (n < 0)
     return -1;
 
-  for (ssize_t i = 0; i < n; ++i)
-    if (buf[i] == '\0' || buf[i] == '\n')
-      buf[i] = ' ';
-
+  /* memchr() skips the bytes in between many at a time; NULs are one per
+   * argument and newlines are rare. */
   char *s = buf, *e = buf + n;
+  for (char *p = buf; (p = memchr(p, '\0', (size_t)(e - p))); ++p)
+    *p = ' ';
+  for (char *p = buf; (p = memchr(p, '\n', (size_t)(e - p))); ++p)
+    *p = ' ';
+
   while (s < e && (*s == ' ' || *s == '\t'))
     ++s;
   while (e > s && (e[-1] == ' ' || e[-1] == '\t'))
@@ -338,10 +386,16 @@ static int is_game(const char *cmd, size_t n) {
 }
 
 static ssize_t read_cmdline(pid_t pid, char *buf, char **out) {
-  char p[16];
+  char p[16], *q = p + sizeof p; /* "%d" of pid, built from the end */
+  unsigned v = pid < 0 ? -(unsigned)pid : (unsigned)pid;
   int fd;
-  snprintf(p, sizeof p, "%d", (int)pid);
-  ssize_t n = read_cmdline_fd(p, buf, out, &fd);
+  *--q = '\0';
+  do
+    *--q = (char)('0' + v % 10);
+  while (v /= 10);
+  if (pid < 0)
+    *--q = '-';
+  ssize_t n = read_cmdline_fd(q, buf, out, &fd);
   if (fd >= 0)
     close(fd);
   return n;
@@ -399,11 +453,12 @@ static void full_scan(struct found *f, int print) {
       } *e = (void *)(dirbuf + pos);
       pos += e->reclen;
 
-      const char *s = e->name;
+      const char *s = e->name, *end = s;
       if (*s < '1' || *s > '9')
         continue;
-      char *end;
-      long pid = strtol(s, &end, 10);
+      long pid = 0; /* digits past the 9th are left for *end: skipped */
+      for (; *end >= '0' && *end <= '9' && pid < 100000000; ++end)
+        pid = pid * 10 + (*end - '0');
       if (*end || pid == self)
         continue;
 
@@ -827,7 +882,7 @@ static int check_pending(void) {
       watch[w].queued = 0;
     if (n > 0 && is_game(cmd, (size_t)n)) {
       hit = 1;
-    } else if (n > 0 && memmem(cmd, (size_t)n, "wine", 4) &&
+    } else if (n > 0 && has_lit(cmd, (size_t)n, &wine_lit) &&
                !set_matches(&excls, cmd, (size_t)n)) {
       int64_t deadline =
           pending[i].deadline ? pending[i].deadline : now + WATCH_MS;
