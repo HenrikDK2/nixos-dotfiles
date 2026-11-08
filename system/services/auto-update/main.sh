@@ -13,9 +13,11 @@ readonly git_cmd=(git -C "$flake"
 # A wall-clock timer, so time spent asleep counts and a check that came due
 # during sleep runs right after resume.
 schedule_check() {
+  local when
+  printf -v when '%(%F %T)T' "$1"
   systemctl stop nixos-upgrade-due.timer 2>/dev/null
   systemd-run --quiet --collect --unit=nixos-upgrade-due \
-    --on-calendar="$(date -d "@$1" '+%F %T')" \
+    --on-calendar="$when" \
     --timer-property=AccuracySec=1min \
     --timer-property=RemainAfterElapse=no \
     "$(command -v systemctl)" start --no-block nixos-upgrade.service ||
@@ -38,7 +40,9 @@ if [[ -e $gate_flag ]]; then
   echo "GameBoost is running; skipping until the game ends."
   exit 1
 fi
-rm -f "$gate_deferred"
+if [[ -e $gate_deferred || -L $gate_deferred ]]; then
+  rm -f "$gate_deferred"
+fi
 
 # ---------- Gate 2: last upgrade too recent ----------
 if read -r gate_created _ 2>/dev/null < "$gate_stamp"; then

@@ -8,8 +8,12 @@ let
   # in ~/.local/share/applications are still picked up by KDE itself.
   rebuildSycocaIfChanged = ''
     cache="''${XDG_CACHE_HOME:-$HOME/.cache}"
-    current="$(readlink -f /run/current-system)"
-    if [ "$(cat "$cache/nixos-ksycoca-system" 2>/dev/null)" != "$current" ]; then
+    # Shell builtins only (the subshell forks but execs nothing); readlink
+    # resolves the path if cd can't.
+    current="$(cd -P /run/current-system 2>/dev/null && pwd -P ||
+      readlink -f /run/current-system)"
+    { stored="$(< "$cache/nixos-ksycoca-system")"; } 2>/dev/null || stored=
+    if [ "$stored" != "$current" ]; then
       rm -fv "$cache/ksycoca"*
       mkdir -p "$cache"
       printf '%s\n' "$current" > "$cache/nixos-ksycoca-system"

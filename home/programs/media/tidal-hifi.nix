@@ -4,7 +4,7 @@ let
   tidalConfigScript = pkgs.writeShellScript "tidal-config" ''
     CONFIG="$HOME/.config/tidal-hifi/config.json"
 
-    mkdir -p "$(dirname "$CONFIG")"
+    [ -d "''${CONFIG%/*}" ] || mkdir -p "''${CONFIG%/*}"
     [ -f "$CONFIG" ] || echo '{}' > "$CONFIG"
 
     # Only replace the config if jq succeeded: on malformed JSON jq writes

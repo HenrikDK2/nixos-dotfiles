@@ -6,8 +6,17 @@ nm-online --timeout=30 --wait-for-startup --quiet || {
     exit 1
 }
 
-IFACE="${1:-$(nmcli -t -f DEVICE,TYPE device status |
-    awk -F: '$2 == "ethernet" && !found { print $1; found = 1 }')}"
+IFACE="${1:-}"
+if [[ -z "$IFACE" ]]; then
+    # The first device of type "ethernet" (terse output is DEVICE:TYPE).
+    DEVICES="$(nmcli -t -f DEVICE,TYPE device status)"
+    while IFS=: read -r DEV TYPE _; do
+        if [[ "$TYPE" == "ethernet" ]]; then
+            IFACE="$DEV"
+            break
+        fi
+    done <<< "$DEVICES"
+fi
 
 if [[ -z "$IFACE" ]]; then
     echo "No Ethernet interface found." >&2

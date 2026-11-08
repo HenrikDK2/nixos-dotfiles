@@ -13,7 +13,7 @@
         src="$1"
         dst="$2"
 
-        $DRY_RUN_CMD ${pkgs.coreutils}/bin/mkdir -p "$dst"
+        [ -d "$dst" ] || $DRY_RUN_CMD ${pkgs.coreutils}/bin/mkdir -p "$dst"
         # `|| true`: cp -n may return non-zero when it skips existing files.
         $DRY_RUN_CMD ${pkgs.coreutils}/bin/cp -rn \
           --no-preserve=mode,ownership \
@@ -24,11 +24,16 @@
         # on every activation and bump each file's ctime, which makes
         # ctime-based backup tools re-read them.
         # Symlinks are skipped, as chmod -R skips them while recursing.
+        # One chmod covers all of them.
+        targets=()
         for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
           target="$dst/''${entry##*/}"
           [ -e "$entry" ] && [ -e "$target" ] && [ ! -L "$target" ] || continue
-          $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+rwX -- "$target"
+          targets+=("$target")
         done
+        if [ ''${#targets[@]} -gt 0 ]; then
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+rwX -- "''${targets[@]}"
+        fi
       }
 
       seedDir "${./files/.config/qBittorrent}"      "$HOME/.config/qBittorrent"

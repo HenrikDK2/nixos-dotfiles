@@ -14,7 +14,7 @@
       Type = "oneshot";
       RemainAfterExit = true;
       Environment = [
-        "PATH=${lib.makeBinPath (with pkgs; [ coreutils gawk networkmanager ])}"
+        "PATH=${lib.makeBinPath (with pkgs; [ coreutils networkmanager ])}"
       ];
       ExecStart = "${pkgs.bash}/bin/bash ${./script.sh}";
     };
