@@ -31,9 +31,11 @@
   };
 
   # Garbage collection
+  # Weekly in effect: checked daily, and run once the last run is a week old
+  # and no game is active (gameboost/maintenance.nix).
   nix.gc = {
     automatic = true;
-    dates = "weekly";
+    dates = "daily";
     options = "--delete-older-than 14d";
   };
 
@@ -55,7 +57,7 @@
   # the same; new paths just wait for the next run to be deduplicated.
   nix.optimise = {
     automatic = true;
-    dates = [ "Mon 03:45" ];
+    dates = [ "03:45" ];   # weekly in effect, see nix.gc above
   };
 
   systemd.services.nix-optimise.serviceConfig.Slice = "background.slice";
