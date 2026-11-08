@@ -25,6 +25,9 @@ in
     operation = "boot";
     flake = flakeDir;
     allowReboot = false;
+    # Flake system: inputs are updated by main.sh. --upgrade would only add a
+    # nix-channel --update of a channel this system does not use.
+    upgrade = false;
 
     dates = "hourly";
     randomizedDelaySec = "300"; # Up to 5 minutes of randomized delay

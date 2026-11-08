@@ -77,6 +77,12 @@ set_cpu_performance() {
     done
 }
 
+# try_write FILE VALUE: write VALUE to a sysfs file; fails if the kernel
+# rejects it.
+try_write() {
+    echo "$2" > "$1" 2>/dev/null
+}
+
 # profile_indices FILE: set idx to the first field of the first line naming
 # 3D_FULL_SCREEN and cur to that of the first line containing '*' (the active
 # profile). Same result as awk '/RE/ {print $1; exit}', without two forks.
@@ -100,17 +106,25 @@ set_gpu_performance() {
 
         set_saved "$gpu/power/control" on
 
-        # AMD: profiles require "manual".
-        set_saved "$gpu/power_dpm_force_performance_level" manual || continue
-
-        # 3D_FULL_SCREEN by name; save the active (*) row's index.
+        # AMD: 3D_FULL_SCREEN by name; save the active (*) row's index.
         prof=$gpu/pp_power_profile_mode
         [ -w "$prof" ] || continue
         profile_indices "$prof"
         [ -n "$idx" ] || continue
 
+        # swsmu GPUs (RDNA, Renoir and newer APUs) accept a profile in "auto",
+        # which keeps the driver's own workload switching; "manual" would
+        # turn that off. powerplay GPUs (Polaris, Vega) reject the write
+        # unless the level is "manual", so fall back to it only then. The
+        # level is saved before the profile: exit.sh restores newest first,
+        # so the profile is put back while the level is still "manual".
+        if try_write "$prof" "$idx"; then
+            [ -n "$cur" ] && save_original "$prof" "$cur"
+            continue
+        fi
+        set_saved "$gpu/power_dpm_force_performance_level" manual || continue
         [ -n "$cur" ] && save_original "$prof" "$cur"
-        echo "$idx" > "$prof" 2>/dev/null
+        try_write "$prof" "$idx"
     done
 }
 
@@ -161,7 +175,10 @@ set_process_priority() {
         while IFS= read -r line || [ -n "$line" ]; do
             [[ $line == 0::* ]] && { cg=${line#0::}; break; }
         done 2>/dev/null < "/proc/$pid/cgroup"
-        [ -n "$cg" ] && set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000
+        # cpu.weight only exists where systemd enabled the cpu controller.
+        if [ -n "$cg" ] && ! set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000; then
+            echo "gameboost: no writable cpu.weight in $cg (cpu controller off?); CPU weight boost skipped" >&2
+        fi
     done
 
     [ ${#tids[@]} -gt 0 ] || return
