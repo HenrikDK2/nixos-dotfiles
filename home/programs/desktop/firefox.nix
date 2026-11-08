@@ -42,14 +42,13 @@ in
         Stories = false;
       };
 
-      # No onboarding, "what's new" or recommendation messages.
+      # No onboarding or recommendation messages.
       UserMessaging = {
         ExtensionRecommendations = false;
         FeatureRecommendations = false;
         UrlbarInterventions = false;
         SkipOnboarding = true;
         MoreFromMozilla = false;
-        WhatsNew = false;
       };
 
       # Address bar: no sponsored suggestions, and keystrokes are not sent

@@ -60,11 +60,13 @@ class MasterTileAnimation {
                !this.isExcluded(window);
     }
 
-    // Unmanaged windows (X11 override-redirect menus and tooltips) and Wayland
-    // popups stay that way for their whole life, and canAnimate() rejects both,
-    // so their geometry and fullscreen changes need no handler at all.
+    // Unmanaged windows (X11 override-redirect menus and tooltips) stay
+    // unmanaged for their whole life (KWin fixes the flag when the EffectWindow
+    // is created) and canAnimate() rejects them, so their geometry and
+    // fullscreen changes need no handler. Popup-ness is not used: a Wayland
+    // toplevel with a plasma-shell tooltip role can later become a normal window.
     neverAnimates(window) {
-        return !window.managed || (window.waylandClient && window.popupWindow);
+        return !window.managed;
     }
 
     manage(window) {
