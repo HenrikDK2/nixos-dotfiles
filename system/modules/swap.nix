@@ -16,4 +16,10 @@
   # CachyOS's value with zram: prefer compressing cold memory over dropping
   # page cache the game may need again.
   boot.kernel.sysctl."vm.swappiness" = 150;
+
+  # systemd-oomd only acts on cgroups with ManagedOOM* set, and nothing here
+  # sets any (systemd.oomd.enable*Slice* are all off). It still wakes every
+  # second to check its empty list, so it is off; the kernel OOM killer and
+  # zram above are unchanged.
+  systemd.oomd.enable = false;
 }
