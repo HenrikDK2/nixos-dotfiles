@@ -553,13 +553,40 @@ static void track(pid_t pid) {
     need_scan = 1; /* already gone: re-check right away */
 }
 
+/* The flag file marks game mode (auto-upgrade and the maintenance gate only
+ * test that it exists) and holds what gameboost-status shows:
+ *   pid=  since=  appid=  cmd=
+ * Written to a temporary file and renamed, so it never appears half-written
+ * or missing while game mode lasts. */
+static time_t mode_since;
+
+static void write_flag(pid_t pid, const char *cmd) {
+  char tmp[4096];
+  const char *a = strstr(cmd, "AppId=");
+  long appid = a ? strtol(a + 6, NULL, 10) : 0;
+
+  snprintf(tmp, sizeof tmp, "%s.tmp", flag_file);
+  int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+  if (fd >= 0) {
+    dprintf(fd, "pid=%d\nsince=%lld\nappid=%ld\ncmd=%s\n", (int)pid,
+            (long long)mode_since, appid, cmd);
+    close(fd);
+    if (!rename(tmp, flag_file))
+      return;
+    unlink(tmp);
+  }
+  /* Fallback: at least mark game mode. */
+  fd = open(flag_file, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  if (fd >= 0)
+    close(fd);
+}
+
 static void enter_game_mode(struct found *f) {
   logmsg("Detected game process: PID=%d, CMD='%s'", (int)f->pid[0],
          f->first_cmd);
 
-  int fd = open(flag_file, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
-  if (fd >= 0)
-    close(fd);
+  mode_since = time(NULL);
+  write_flag(f->pid[0], f->first_cmd);
 
   /* start.sh PID... */
   char path[4096], pids[MAX_FOUND][12];
@@ -730,6 +757,7 @@ static void on_game_exit(void) {
   if (f.n) {
     logmsg("Switched tracking to another game: PID=%d, CMD='%s'",
            (int)f.pid[0], f.first_cmd);
+    write_flag(f.pid[0], f.first_cmd);
     if (sock >= 0)
       cn_control(sock, PROC_CN_MCAST_IGNORE);
     npending = 0;

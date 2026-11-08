@@ -46,6 +46,15 @@ in
   # rtkit. Takes effect at the next login.
   systemd.services."user@".serviceConfig.LimitNICE = "-11";
 
+  # `gameboost-status`: game mode, the tracked game, and what was changed.
+  environment.systemPackages = [
+    (pkgs.writeShellApplication {
+      name = "gameboost-status";
+      runtimeInputs = with pkgs; [ coreutils systemd ];
+      text = builtins.readFile ./status.sh;
+    })
+  ];
+
   # Started by start.sh while a game runs (when power-profiles-daemon drives
   # the CPU) and stopped by exit.sh. PartOf: stopping or restarting GameBoost
   # also drops the hold.
