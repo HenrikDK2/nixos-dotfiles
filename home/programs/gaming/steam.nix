@@ -10,6 +10,10 @@
   programs.steam.config = {
     enable = true;
     defaultCompatTool = "proton-cachyos-x86_64-v3";
+    # A config change made while Steam is open is applied at the next login
+    # (before Steam starts) instead of keeping a Python process waiting for
+    # Steam to exit.
+    onSteamRunning = "skip";
   };
 }
 

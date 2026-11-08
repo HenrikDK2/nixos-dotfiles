@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, helpers, ... }:
 
 {
   environment.systemPackages = with pkgs; [
@@ -9,16 +9,18 @@
   # Add udev rules for steam devices
   hardware.steam-hardware.enable = true;
 
-  services.udev.extraRules = lib.concatStringsSep "\n" [
+  services.udev.extraRules = lib.concatStringsSep "\n" (
     # 1. SATA / HDD POWER MANAGEMENT
-    ''
+    # Desktops only: laptops keep the kernel and drive defaults (link power
+    # saving, HDD spin-down) for battery life.
+    lib.optional (!helpers.isLaptop) ''
       # SATA Active Link Power Management
       ACTION=="add", SUBSYSTEM=="scsi_host", KERNEL=="host*", ATTR{link_power_management_policy}=="*", ATTR{link_power_management_policy}="max_performance"
 
       # Prevent HDD standby and head parking
       ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTRS{id/bus}=="ata", RUN+="${pkgs.hdparm}/bin/hdparm -B 254 -S 0 /dev/%k"
     ''
-
+  ++ [
     # 2. STORAGE SCHEDULERS
     ''
       # HDD -> BFQ
@@ -51,5 +53,5 @@
       SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31e3", TAG+="uaccess"
       SUBSYSTEM=="usb", ATTRS{idVendor}=="31e3", TAG+="uaccess"
     ''
-  ];
+  ]);
 }

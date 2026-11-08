@@ -8,6 +8,8 @@
  * kernel's exec events (netlink proc connector) and only looks at processes
  * that just started a new program. While a game runs it unsubscribes and
  * sleeps on a pidfd until the game exits, so it never wakes up during play.
+ * A Wine process is re-checked when it renames itself to the game's .exe
+ * (rename events are requested only while such a process is pending).
  *
  * Fallbacks: no proc connector (e.g. non-root, container) -> full scan every
  * FALLBACK_MS; no pidfd_open (< Linux 5.3) -> kill(pid, 0) every FALLBACK_MS.
@@ -68,9 +70,18 @@
 #define MIN_LIT 3
 #define CLOSE_BATCH 128
 
-/* Wine rewrites argv to the Windows path shortly after exec. A process whose
- * cmdline still mentions wine at the first check is re-checked later. */
-static const int64_t wine_retry_ms[] = {4000, 25000};
+/* Wine rewrites a process's argv to the Windows command line in place and
+ * then names the process after the .exe (prctl PR_SET_NAME), which the
+ * kernel reports as a COMM event. A process whose cmdline still mentions wine
+ * at its first check is watched for that rename for up to WATCH_MS (a first
+ * wineboot of a prefix can take a while), and re-checked the moment it
+ * happens. The window counts from that first check and is never extended:
+ * after it, the process only gets one last check. COMM events are only requested while something is watched: every
+ * named thread on the system produces one. */
+#define WATCH_MAX 64
+#define WATCH_MS 120000
+#define WATCH_POLL_MS 250 /* read queued renames in batches, not one by one */
+#define WATCH_FULL_RETRY_MS 25000 /* watch list full: one late re-check */
 
 /* ------------------------------------------------------------------------- */
 /* Pattern sets                                                               */
@@ -80,6 +91,7 @@ struct alt {
   char *pat;       /* this alternative alone, NUL-terminated */
   const char *lit; /* literal every match contains, or NULL */
   size_t litn;
+  size_t anc; /* index in lit of its least common byte (memchr anchor) */
   int compiled;
   regex_t re;
 };
@@ -202,6 +214,48 @@ static int extract_literal(const char *re, char *pool, const char **lit,
   return 1;
 }
 
+/* How common byte c is in command lines (lower = rarer). Nix store hashes
+ * use digits and most lowercase letters, but never e, o, t or u; capitals
+ * and punctuation other than path/option separators are rare. */
+static int byte_rank(unsigned char c) {
+  static const char lower[] = "zqjxkvbgpwyfmculdhrsnioate"; /* rarest first */
+  if (c >= 'A' && c <= 'Z')
+    return 1;
+  if (c >= '0' && c <= '9')
+    return 3;
+  if (c >= 'a' && c <= 'z')
+    return 4 + (int)(strchr(lower, c) - lower);
+  if (strchr("/-._ ", c))
+    return 40;
+  return 2;
+}
+
+static size_t pick_anchor(const char *lit, size_t n) {
+  size_t best = 0;
+  for (size_t i = 1; i < n; ++i)
+    if (byte_rank((unsigned char)lit[i]) < byte_rank((unsigned char)lit[best]))
+      best = i;
+  return best;
+}
+
+/* memmem(s, n, a->lit, a->litn) != NULL, found by memchr() on the anchor
+ * byte: few candidate positions, each confirmed with memcmp(). */
+static int has_lit(const char *s, size_t n, const struct alt *a) {
+  size_t k = a->anc, ln = a->litn;
+  if (n < ln)
+    return 0;
+  const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
+  while (p <= last && (p = memchr(p, a->lit[k], (size_t)(last - p) + 1))) {
+    if (!memcmp(p - k, a->lit, ln))
+      return 1;
+    ++p;
+  }
+  return 0;
+}
+
+/* "wine" in a command line; 'w' is its least common byte. */
+static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
+
 static void *xalloc(void *p) {
   if (!p) {
     (void)!write(2, "gameboostd: out of memory\n", 26);
@@ -247,6 +301,8 @@ static int split_alts(const char *re, struct altset *set) {
       if (!extract_literal(a->pat, pool, &a->lit, &a->litn)) {
         free(pool);
         a->lit = NULL;
+      } else {
+        a->anc = pick_anchor(a->lit, a->litn);
       }
       if (!*p)
         break;
@@ -268,7 +324,7 @@ static int compile_alt(struct alt *a) {
 static int set_matches(struct altset *set, const char *s, size_t n) {
   for (int i = 0; i < set->n; ++i) {
     struct alt *a = &set->v[i];
-    if (a->lit && !memmem(s, n, a->lit, a->litn))
+    if (a->lit && !has_lit(s, n, a))
       continue;
     if (compile_alt(a))
       _exit(2); /* validated at startup; cannot happen */
@@ -308,11 +364,14 @@ static ssize_t read_cmdline_fd(const char *pid, char *buf, char **out,
   if (n < 0)
     return -1;
 
-  for (ssize_t i = 0; i < n; ++i)
-    if (buf[i] == '\0' || buf[i] == '\n')
-      buf[i] = ' ';
-
+  /* memchr() skips the bytes in between many at a time; NULs are one per
+   * argument and newlines are rare. */
   char *s = buf, *e = buf + n;
+  for (char *p = buf; (p = memchr(p, '\0', (size_t)(e - p))); ++p)
+    *p = ' ';
+  for (char *p = buf; (p = memchr(p, '\n', (size_t)(e - p))); ++p)
+    *p = ' ';
+
   while (s < e && (*s == ' ' || *s == '\t'))
     ++s;
   while (e > s && (e[-1] == ' ' || e[-1] == '\t'))
@@ -327,10 +386,16 @@ static int is_game(const char *cmd, size_t n) {
 }
 
 static ssize_t read_cmdline(pid_t pid, char *buf, char **out) {
-  char p[16];
+  char p[16], *q = p + sizeof p; /* "%d" of pid, built from the end */
+  unsigned v = pid < 0 ? -(unsigned)pid : (unsigned)pid;
   int fd;
-  snprintf(p, sizeof p, "%d", (int)pid);
-  ssize_t n = read_cmdline_fd(p, buf, out, &fd);
+  *--q = '\0';
+  do
+    *--q = (char)('0' + v % 10);
+  while (v /= 10);
+  if (pid < 0)
+    *--q = '-';
+  ssize_t n = read_cmdline_fd(q, buf, out, &fd);
   if (fd >= 0)
     close(fd);
   return n;
@@ -388,11 +453,12 @@ static void full_scan(struct found *f, int print) {
       } *e = (void *)(dirbuf + pos);
       pos += e->reclen;
 
-      const char *s = e->name;
+      const char *s = e->name, *end = s;
       if (*s < '1' || *s > '9')
         continue;
-      char *end;
-      long pid = strtol(s, &end, 10);
+      long pid = 0; /* digits past the 9th are left for *end: skipped */
+      for (; *end >= '0' && *end <= '9' && pid < 100000000; ++end)
+        pid = pid * 10 + (*end - '0');
       if (*end || pid == self)
         continue;
 
@@ -433,7 +499,8 @@ static void full_scan(struct found *f, int print) {
 /* Proc connector                                                            */
 /* ------------------------------------------------------------------------- */
 
-static int cn_control(int sock, enum proc_cn_mcast_op op) {
+/* mask: event types to receive (6.6+; older kernels drop this 8-byte form). */
+static int cn_control(int sock, enum proc_cn_mcast_op op, unsigned mask) {
   struct __attribute__((packed)) {
     struct nlmsghdr nl;
     struct cn_msg cn;
@@ -447,7 +514,7 @@ static int cn_control(int sock, enum proc_cn_mcast_op op) {
   m.cn.id.val = CN_VAL_PROC;
   m.cn.len = sizeof m.in;
   m.in.mcast_op = op;
-  m.in.event_type = PROC_EVENT_EXEC; /* 6.6+: exec only; older: ignored */
+  m.in.event_type = mask;
   return send(sock, &m, sizeof m, 0) == sizeof m ? 0 : -1;
 }
 
@@ -461,7 +528,8 @@ static int cn_open(void) {
   int rcv = 1 << 20; /* room for ~2 s of exec bursts; overflow -> full scan */
 
   setsockopt(s, SOL_SOCKET, SO_RCVBUFFORCE, &rcv, sizeof rcv);
-  if (bind(s, (void *)&a, sizeof a) || cn_control(s, PROC_CN_MCAST_LISTEN)) {
+  if (bind(s, (void *)&a, sizeof a) ||
+      cn_control(s, PROC_CN_MCAST_LISTEN, PROC_EVENT_EXEC)) {
     close(s);
     return -1;
   }
@@ -481,12 +549,39 @@ static struct {
   pid_t pid;
   int tries;
   int64_t due;
+  int64_t deadline; /* rename watch: 0 = not started yet, -1 = over */
 } pending[MAX_PENDING];
 static int npending;
 static unsigned long stat_events, stat_checks, stat_storms;
 static int64_t storm_until, win_start;
 static unsigned win_events;
 static int overflowed, stormy;
+
+static struct {
+  pid_t tgid;
+  int queued; /* a check for it is pending */
+  int64_t deadline;
+} watch[WATCH_MAX];
+static int nwatch;
+static unsigned long stat_renames;
+
+/* Event types requested while listening (0 = not listening). A LISTEN on a
+ * socket that already listens only replaces its filter, so switching between
+ * EXEC and EXEC|COMM does not touch the kernel's listener count. */
+static unsigned cur_mask;
+
+static void listen_for(unsigned mask) {
+  if (sock >= 0 && mask != cur_mask &&
+      !cn_control(sock, PROC_CN_MCAST_LISTEN, mask))
+    cur_mask = mask;
+}
+
+static void stop_listening(void) {
+  if (sock >= 0)
+    cn_control(sock, PROC_CN_MCAST_IGNORE, 0);
+  cur_mask = 0;
+  nwatch = 0;
+}
 
 static int64_t now_ms(void) {
   struct timespec t;
@@ -553,13 +648,40 @@ static void track(pid_t pid) {
     need_scan = 1; /* already gone: re-check right away */
 }
 
+/* The flag file marks game mode (auto-upgrade and the maintenance gate only
+ * test that it exists) and holds what gameboost-status shows:
+ *   pid=  since=  appid=  cmd=
+ * Written to a temporary file and renamed, so it never appears half-written
+ * or missing while game mode lasts. */
+static time_t mode_since;
+
+static void write_flag(pid_t pid, const char *cmd) {
+  char tmp[4096];
+  const char *a = strstr(cmd, "AppId=");
+  long appid = a ? strtol(a + 6, NULL, 10) : 0;
+
+  snprintf(tmp, sizeof tmp, "%s.tmp", flag_file);
+  int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+  if (fd >= 0) {
+    dprintf(fd, "pid=%d\nsince=%lld\nappid=%ld\ncmd=%s\n", (int)pid,
+            (long long)mode_since, appid, cmd);
+    close(fd);
+    if (!rename(tmp, flag_file))
+      return;
+    unlink(tmp);
+  }
+  /* Fallback: at least mark game mode. */
+  fd = open(flag_file, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  if (fd >= 0)
+    close(fd);
+}
+
 static void enter_game_mode(struct found *f) {
   logmsg("Detected game process: PID=%d, CMD='%s'", (int)f->pid[0],
          f->first_cmd);
 
-  int fd = open(flag_file, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
-  if (fd >= 0)
-    close(fd);
+  mode_since = time(NULL);
+  write_flag(f->pid[0], f->first_cmd);
 
   /* start.sh PID... */
   char path[4096], pids[MAX_FOUND][12];
@@ -577,8 +699,7 @@ static void enter_game_mode(struct found *f) {
 
   game_mode = 1;
   npending = 0;
-  if (sock >= 0)
-    cn_control(sock, PROC_CN_MCAST_IGNORE); /* no events during play */
+  stop_listening(); /* no events during play */
   track(f->pid[0]);
 }
 
@@ -598,9 +719,7 @@ static void leave_game_mode(void) {
 /* No duplicate check: a PID that exec'd twice in a second just gets checked
  * twice (one cheap kill(0) each), which is cheaper than a linear search per
  * event under exec bursts. */
-static void add_pending(pid_t pid, int64_t due) {
-  ++stat_events;
-  ++win_events;
+static void queue_check(pid_t pid, int64_t due, int64_t deadline) {
   if (npending == MAX_PENDING) {
     overflowed = 1; /* storm mode takes over */
     return;
@@ -608,7 +727,81 @@ static void add_pending(pid_t pid, int64_t due) {
   pending[npending].pid = pid;
   pending[npending].tries = 0;
   pending[npending].due = due;
+  pending[npending].deadline = deadline;
   ++npending;
+}
+
+static void add_pending(pid_t pid, int64_t due) {
+  ++stat_events;
+  ++win_events;
+  queue_check(pid, due, 0);
+}
+
+static int watched(pid_t tgid) {
+  for (int i = 0; i < nwatch; ++i)
+    if (watch[i].tgid == tgid)
+      return i;
+  return -1;
+}
+
+static void unwatch(int i) {
+  watch[i] = watch[--nwatch];
+  if (!nwatch)
+    listen_for(PROC_EVENT_EXEC);
+}
+
+/* Returns 1 if TGID is newly watched (COMM events are on from here). */
+static int watch_add(pid_t tgid, int64_t deadline) {
+  if (watched(tgid) >= 0 || nwatch == WATCH_MAX)
+    return 0;
+  watch[nwatch].tgid = tgid;
+  watch[nwatch].queued = 0;
+  watch[nwatch].deadline = deadline;
+  ++nwatch;
+  listen_for(PROC_EVENT_EXEC | PROC_EVENT_COMM);
+  return 1;
+}
+
+/* A thread of TGID was renamed. Wine's preloader first names the process
+ * "wine"/"wine64" before its own argv is rewritten, so that one is skipped;
+ * the next rename comes after the final cmdline is in place. */
+static void on_rename(pid_t tgid, const char *comm) {
+  ++stat_renames;
+  int i = watched(tgid);
+  if (i < 0 || watch[i].queued || !strncmp(comm, "wine", 4))
+    return;
+  watch[i].queued = 1; /* one check per batch of renames */
+  queue_check(tgid, 0, watch[i].deadline);
+}
+
+/* Renames are coming in faster than the socket queue can hold (thread
+ * naming bursts). Lost renames are not an exec storm: stop watching renames,
+ * re-check each watched process later (it is watched again then if its
+ * deadline has not passed), and let a full scan catch any exec events lost
+ * with them. */
+static void give_up_renames(int64_t now) {
+  for (int i = 0; i < nwatch; ++i)
+    queue_check(watch[i].tgid, now + WATCH_FULL_RETRY_MS, watch[i].deadline);
+  nwatch = 0;
+  listen_for(PROC_EVENT_EXEC);
+  need_scan = 1;
+  logmsg("Too many thread renames: re-checking Wine processes in %d s",
+         WATCH_FULL_RETRY_MS / 1000);
+}
+
+/* Drop watched processes that are gone or past their deadline (with one
+ * last check for the latter). */
+static void expire_watch(int64_t now) {
+  for (int i = 0; i < nwatch;) {
+    if (kill(watch[i].tgid, 0) && errno == ESRCH) {
+      unwatch(i);
+    } else if (watch[i].deadline <= now) {
+      queue_check(watch[i].tgid, 0, -1);
+      unwatch(i);
+    } else {
+      ++i;
+    }
+  }
 }
 
 /* Read every queued event, up to EV_BATCH datagrams per syscall (netlink
@@ -634,8 +827,11 @@ static int drain_events(void) {
     if (got < 0) {
       if (errno == EINTR)
         continue;
-      if (errno == ENOBUFS) { /* events lost: storm mode takes over */
-        overflowed = 1;
+      if (errno == ENOBUFS) { /* events lost */
+        if (cur_mask & PROC_EVENT_COMM)
+          give_up_renames(now_ms());
+        else
+          overflowed = 1; /* storm mode takes over */
         need_scan = 1;
         continue;
       }
@@ -651,6 +847,9 @@ static int drain_events(void) {
           struct proc_event *ev = (void *)cn->data;
           if (ev->what == PROC_EVENT_EXEC)
             add_pending(ev->event_data.exec.process_tgid, due);
+          else if (ev->what == PROC_EVENT_COMM)
+            on_rename(ev->event_data.comm.process_tgid,
+                      ev->event_data.comm.comm);
         }
       }
 
@@ -678,12 +877,31 @@ static int check_pending(void) {
     ssize_t n = kill(pending[i].pid, 0) && errno == ESRCH
                     ? -1
                     : read_cmdline(pending[i].pid, buf, &cmd);
-    int keep = 0;
+    int keep = 0, w = watched(pending[i].pid);
+    if (w >= 0)
+      watch[w].queued = 0;
     if (n > 0 && is_game(cmd, (size_t)n)) {
       hit = 1;
-    } else if (n > 0 && pending[i].tries < 2 && memmem(cmd, (size_t)n, "wine", 4)) {
-      pending[i].due = now + wine_retry_ms[pending[i].tries++];
-      keep = 1;
+    } else if (n > 0 && has_lit(cmd, (size_t)n, &wine_lit) &&
+               !set_matches(&excls, cmd, (size_t)n)) {
+      int64_t deadline =
+          pending[i].deadline ? pending[i].deadline : now + WATCH_MS;
+      if (w >= 0) {
+        /* still watched: the next rename brings the next check */
+      } else if (deadline <= now) {
+        /* its watch is over: this was the last check */
+      } else if (watch_add(pending[i].pid, deadline)) {
+        /* It may have been renamed just before COMM events were on. */
+        n = read_cmdline(pending[i].pid, buf, &cmd);
+        hit |= n > 0 && is_game(cmd, (size_t)n);
+      } else if (watched(pending[i].pid) < 0 && !pending[i].tries) {
+        pending[i].due = now + WATCH_FULL_RETRY_MS; /* list full */
+        pending[i].deadline = deadline;
+        pending[i].tries = 1;
+        keep = 1;
+      }
+    } else if (w >= 0) {
+      unwatch(w); /* gone, or no longer a Wine command line */
     }
     if (keep)
       ++i;
@@ -719,7 +937,7 @@ static void on_game_exit(void) {
 
   /* Listen before scanning so nothing exec'd in between is missed. */
   if (sock >= 0) {
-    cn_control(sock, PROC_CN_MCAST_LISTEN);
+    listen_for(PROC_EVENT_EXEC);
     game_mode = 0; /* drain_events keeps events from here on */
     (void)drain_events();
     game_mode = 1;
@@ -730,13 +948,23 @@ static void on_game_exit(void) {
   if (f.n) {
     logmsg("Switched tracking to another game: PID=%d, CMD='%s'",
            (int)f.pid[0], f.first_cmd);
-    if (sock >= 0)
-      cn_control(sock, PROC_CN_MCAST_IGNORE);
+    write_flag(f.pid[0], f.first_cmd);
+    stop_listening();
     npending = 0;
     track(f.pid[0]);
   } else {
     leave_game_mode();
   }
+}
+
+/* The kernel counts proc-connector listeners per LISTEN/IGNORE message and
+ * does not decrement the count when a listening socket is closed, so exiting
+ * while subscribed would leave every later fork/exec/exit (system-wide, until
+ * reboot) building an event for nobody. Idempotent: IGNORE is only counted
+ * if this socket is currently listening. */
+static void unsubscribe(void) {
+  if (sock >= 0)
+    cn_control(sock, PROC_CN_MCAST_IGNORE, 0);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -811,6 +1039,8 @@ int main(int argc, char **argv) {
 
   sock = cn_open();
   if (sock >= 0)
+    cur_mask = PROC_EVENT_EXEC;
+  if (sock >= 0)
     logmsg("Watching exec events");
   else
     logmsg("Exec events unavailable: polling every %d s", FALLBACK_MS / 1000);
@@ -830,10 +1060,13 @@ int main(int argc, char **argv) {
     } else if (storm_until) {
       int64_t d = storm_until - now_ms();
       timeout = d < 0 ? 0 : (int)d;
-    } else if (npending) {
+    } else if (npending || nwatch) {
       /* Let events queue in the socket until the next check is due:
-       * one wakeup per batch instead of one per exec. */
-      int64_t d = next_due() - now_ms();
+       * one wakeup per batch instead of one per exec. While processes are
+       * watched for a rename, read the queue every WATCH_POLL_MS. */
+      int64_t d = npending ? next_due() - now_ms() : INT64_MAX;
+      if (nwatch && d > WATCH_POLL_MS)
+        d = WATCH_POLL_MS;
       timeout = d < 0 ? 0 : (int)d;
     } else {
       p[1].fd = sock;
@@ -843,18 +1076,21 @@ int main(int argc, char **argv) {
       timeout = 0;
 
     int r = poll(p, 2, timeout);
-    if (r < 0 && errno != EINTR)
+    if (r < 0 && errno != EINTR) {
+      unsubscribe();
       return 1;
+    }
 
     if (p[0].revents & POLLIN) {
-      logmsg("Stopping: %lu exec events, %lu checks, %lu full scans, "
-             "%lu storm periods",
-             stat_events, stat_checks, stat_scans, stat_storms);
+      logmsg("Stopping: %lu exec events, %lu renames, %lu checks, "
+             "%lu full scans, %lu storm periods",
+             stat_events, stat_renames, stat_checks, stat_scans, stat_storms);
       if (game_mode) { /* restore power settings on shutdown */
         leave_game_mode();
         while (wait(NULL) > 0 || errno == EINTR)
           ;
       }
+      unsubscribe();
       return 0;
     }
 
@@ -882,7 +1118,7 @@ int main(int argc, char **argv) {
       storm_until = 0;
       win_start = now;
       win_events = 0;
-      cn_control(sock, PROC_CN_MCAST_LISTEN);
+      listen_for(PROC_EVENT_EXEC);
       scan_and_maybe_enter();
       continue;
     }
@@ -907,11 +1143,13 @@ int main(int argc, char **argv) {
       overflowed = 0;
       need_scan = 0;
       npending = 0; /* the scan at the end of the storm period covers them */
-      cn_control(sock, PROC_CN_MCAST_IGNORE);
+      stop_listening();
       storm_until = now + FALLBACK_MS;
       continue;
     }
 
+    if (nwatch)
+      expire_watch(now);
     if (check_pending() || need_scan)
       scan_and_maybe_enter();
   }

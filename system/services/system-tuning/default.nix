@@ -11,17 +11,17 @@
       "NetworkManager.service"
     ];
 
-    path = with pkgs; [
-      coreutils
-      gawk
-      gnugrep
-      procps
-      systemd
-      networkmanager
-    ];
+    path = [ pkgs.procps ];
+
+    # nixos-rebuild switch restarts systemd-sysctl whenever the NixOS sysctl
+    # set changes, which puts the NixOS defaults back over these values.
+    # PartOf + RemainAfterExit restart this unit with it (and on its own
+    # changes), so the tuned values are reapplied instead of lost until reboot.
+    partOf = [ "systemd-sysctl.service" ];
 
     serviceConfig = {
       Type = "oneshot";
+      RemainAfterExit = true;
       ExecStart = "${pkgs.bash}/bin/bash ${./script.sh}";
     };
   };

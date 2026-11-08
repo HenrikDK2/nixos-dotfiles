@@ -2,6 +2,35 @@
 
 # Original values, restored by exit.sh.
 STATE=/run/gameboost/state
+# CUPS units stopped for the game, for exit.sh.
+CUPS_STOPPED=/run/gameboost/cups
+FLAG=/run/gameboost/running.flag
+
+# Files whose original value is already in $STATE. Seeded from an existing
+# $STATE so originals left by an interrupted run are never overwritten.
+declare -A SAVED=()
+
+load_saved() {
+    local f _
+    [ -f "$STATE" ] || return 0
+    while IFS='=' read -r f _; do
+        [ -n "$f" ] && SAVED[$f]=1   # empty subscript would abort main
+    done < "$STATE"
+}
+
+# is_saved FILE: true if FILE's original is in $STATE. If $STATE was removed
+# meanwhile (exit.sh of a previous game), nothing counts as saved any more.
+is_saved() {
+    [ -f "$STATE" ] || SAVED=()
+    [[ -n ${SAVED[$1]+x} ]]
+}
+
+# save_original FILE VALUE: record FILE's original VALUE once.
+save_original() {
+    is_saved "$1" && return 0
+    printf '%s=%s\n' "$1" "$2" >> "$STATE"
+    SAVED[$1]=1
+}
 
 # set_saved FILE VALUE: save FILE's original once, then write VALUE.
 # Returns 1 if FILE isn't writable.
@@ -9,13 +38,13 @@ set_saved() {
     local cur
     [ -w "$1" ] || return 1
 
-    if ! grep -q "^$1=" "$STATE" 2>/dev/null; then
+    if ! is_saved "$1"; then
         read -r cur < "$1" 2>/dev/null
         if [[ $cur == *\[*\]* ]]; then
             cur=${cur#*\[}
             cur=${cur%%\]*}
         fi
-        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
+        save_original "$1" "$cur"
     fi
 
     echo "$2" > "$1" 2>/dev/null
@@ -25,28 +54,78 @@ is_laptop() {
     [ -d /sys/class/power_supply/BAT0 ] || [ -d /sys/class/power_supply/BAT1 ]
 }
 
+# on_ac: true when running on external power (systemd's own check, which
+# also understands USB-C supplies). Unknown counts as AC.
+on_ac() {
+    systemd-ac-power 2>/dev/null
+    (($? != 1))
+}
+
+# ppd_drives_cpu: power-profiles-daemon is running and drives the CPU itself
+# (amd-pstate in active mode, or intel_pstate). Its "performance" profile then
+# sets the governor, EPP and boost, so GameBoost holds that profile instead of
+# writing the same files behind PPD's back.
+ppd_drives_cpu() {
+    local driver status
+    systemctl is-active --quiet power-profiles-daemon.service || return 1
+    # stderr is redirected outside $(): bash runs a $() holding one command
+    # without redirections by exec, with no second fork.
+    { driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
+        /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles \
+        CpuDriver); } 2>/dev/null || return 1
+    case $driver in
+        's "intel_pstate"') return 0 ;;
+        's "amd_pstate"')
+            # PPD only drives amd-pstate in active (EPP) mode.
+            read -r status 2>/dev/null < /sys/devices/system/cpu/amd_pstate/status
+            [[ $status == active ]] ;;
+        *) return 1 ;;
+    esac
+}
+
 set_cpu_performance() {
     local cpu f
 
-    # Boost: acpi-cpufreq (global), amd-pstate (per CPU), intel_pstate.
-    for f in /sys/devices/system/cpu/cpufreq/boost /sys/devices/system/cpu/cpu*/cpufreq/boost; do
-        set_saved "$f" 1
-    done
-    set_saved /sys/devices/system/cpu/intel_pstate/no_turbo 0
+    # The hold is released by exit.sh, or by PPD itself if the helper dies.
+    # A refused hold (or no PPD) falls back to writing sysfs directly.
+    if ! { ppd_drives_cpu && systemctl start gameboost-hold.service 2>/dev/null; }; then
+        # Boost: acpi-cpufreq (global), amd-pstate (per CPU), intel_pstate.
+        for f in /sys/devices/system/cpu/cpufreq/boost /sys/devices/system/cpu/cpu*/cpufreq/boost; do
+            set_saved "$f" 1
+        done
+        set_saved /sys/devices/system/cpu/intel_pstate/no_turbo 0
 
-    for cpu in /sys/devices/system/cpu/cpu*/cpufreq; do
-        # EPP first: amd-pstate rejects EPP writes under "performance".
-        set_saved "$cpu/energy_performance_preference" performance
-        set_saved "$cpu/scaling_governor" performance
-    done
+        for cpu in /sys/devices/system/cpu/cpu*/cpufreq; do
+            # EPP first: amd-pstate rejects EPP writes under "performance".
+            set_saved "$cpu/energy_performance_preference" performance
+            set_saved "$cpu/scaling_governor" performance
+        done
+    fi
 
-    # No split-lock slowdown (Intel).
-    set_saved /proc/sys/kernel/split_lock_mitigate 0
-
-    # Dual-CCD X3D: prefer the V-Cache CCD (BIOS CPPC = "Driver").
+    # Dual-CCD X3D: prefer the V-Cache CCD (BIOS CPPC = "Driver"). PPD does
+    # not touch this.
     for f in /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode; do
         set_saved "$f" cache
     done
+}
+
+# try_write FILE VALUE: write VALUE to a sysfs file; fails if the kernel
+# rejects it.
+try_write() {
+    echo "$2" > "$1" 2>/dev/null
+}
+
+# profile_indices FILE: set idx to the first field of the first line naming
+# 3D_FULL_SCREEN and cur to that of the first line containing '*' (the active
+# profile).
+profile_indices() {
+    local line
+    idx= cur=
+    while IFS= read -r line || [ -n "$line" ]; do
+        [[ -z $idx && $line == *3D_FULL_SCREEN* ]] && read -r idx _ <<< "$line"
+        [[ -z $cur && $line == *\** ]] && read -r cur _ <<< "$line"
+        [[ -n $idx && -n $cur ]] && break
+    done 2>/dev/null < "$1"
 }
 
 # Force performance mode on all GPUs (VGA, 3D, display controllers)
@@ -59,27 +138,27 @@ set_gpu_performance() {
 
         set_saved "$gpu/power/control" on
 
-        # AMD: profiles require "manual".
-        set_saved "$gpu/power_dpm_force_performance_level" manual || continue
-
-        # 3D_FULL_SCREEN by name; save the active (*) row's index.
+        # AMD: 3D_FULL_SCREEN by name; save the active (*) row's index.
         prof=$gpu/pp_power_profile_mode
         [ -w "$prof" ] || continue
-        idx=$(awk '/3D_FULL_SCREEN/ {print $1; exit}' "$prof" 2>/dev/null)
-        cur=$(awk '/\*/ {print $1; exit}' "$prof" 2>/dev/null)
+        profile_indices "$prof"
         [ -n "$idx" ] || continue
 
-        if [ -n "$cur" ] && ! grep -q "^$prof=" "$STATE" 2>/dev/null; then
-            printf '%s=%s\n' "$prof" "$cur" >> "$STATE"
-        fi
-        echo "$idx" > "$prof" 2>/dev/null
+        # swsmu GPUs (Navi/RDNA dGPUs, Renoir, Van Gogh) accept a profile in
+        # "auto", which keeps the driver's own workload switching; "manual"
+        # would turn that off. powerplay GPUs (Polaris/Tonga/Fiji, Vega10/20,
+        # Raven/Picasso APUs) reject it unless the level is "manual", so fall
+        # back to that only when the first write fails. The original is saved
+        # before any write, so an interrupted start.sh never leaves a profile
+        # that exit.sh cannot undo.
+        [ -n "$cur" ] && save_original "$prof" "$cur"
+        try_write "$prof" "$idx" && continue
+        set_saved "$gpu/power_dpm_force_performance_level" manual || continue
+        # Record the profile again after the level: exit.sh restores newest
+        # first, so it puts the profile back while the level is still manual.
+        [ -n "$cur" ] && printf '%s=%s\n' "$prof" "$cur" >> "$STATE"
+        try_write "$prof" "$idx"
     done
-}
-
-kill_background_processes() {
-    pkill -9 -f '^(cmst|hypridle|mullvad-gui|blueman-applet|blueman-manager|blueman-tray|chrome_crashpad)( |$)' 2>/dev/null
-    pkill -9 -x chrome_crashpad 2>/dev/null
-    return 0
 }
 
 disable_sata_power_management() {
@@ -106,25 +185,106 @@ disable_pcie_power_management() {
     set_saved /sys/module/pcie_aspm/parameters/policy performance
 }
 
+# tree_pids ROOT...: ROOT and every live descendant, in TREE. A game is often
+# forked well after detection by a process that is not itself a match (Steam's
+# pv-adverb/srt-bwrap, Proton's python script), and nice is only inherited at
+# fork, so boosting just the matched PIDs can miss the game entirely.
+# ppid map from /proc/PID/stat; comm may contain spaces, ')' or newlines, so
+# the whole file is read and the fields are parsed after the last ') '.
+# This loop covers every process, several times per game: it uses expansions
+# that are linear in the line length and no here-strings (which bash reads one
+# byte per syscall), and redirects stderr once.
+tree_pids() {
+    local stat line head rest pid ppid i
+    local -A kids=()
+    TREE=()
+
+    for stat in /proc/[0-9]*/stat; do
+        # read returns 1 at EOF (no NUL in the file); line is still filled.
+        read -r -d '' line < "$stat"
+        head=${line%") "*}       # up to the last ') '
+        rest=${line#"$head") }   # after it; the whole line if none
+        ppid=${rest#* }          # "STATE PPID ..."
+        ppid=${ppid%% *}
+        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
+        pid=${stat#/proc/}
+        kids[$ppid]+=" ${pid%/stat}"
+    done 2>/dev/null
+
+    for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
+    for ((i = 0; i < ${#TREE[@]}; i++)); do
+        for pid in ${kids[${TREE[i]}]}; do TREE+=("$pid"); done
+    done
+}
+
+# cgroups already handled (weight set, or warned once that it can't be).
+declare -A CG_DONE=()
+
+# wine_sets_nice PID: true for a Wine process that can set its own thread
+# priorities. wineserver maps Windows thread priorities to absolute nice
+# values when RLIMIT_NICE lets it (the session grants nice -11, rlimit 31, in
+# default.nix), and that overrides any blanket renice. Such processes get only
+# the I/O and cgroup boost; everything else keeps nice -11.
+wine_sets_nice() {
+    local argv0 line soft
+    read -r -d '' argv0 2>/dev/null < "/proc/$1/cmdline"
+    case $argv0 in
+        [A-Za-z]:[\\/]* | wine | wine64 | */wine | */wine64 | *wine-preloader | *wine64-preloader) ;;
+        *) return 1 ;;
+    esac
+    while IFS= read -r line; do
+        if [[ $line == "Max nice priority"* ]]; then
+            [[ $line =~ ^Max\ nice\ priority\ +([^ ]*) ]]
+            soft=${BASH_REMATCH[1]}
+            [[ $soft == unlimited ]] || ((soft > 20))
+            return
+        fi
+    done 2>/dev/null < "/proc/$1/limits"
+    return 1
+}
+
 set_process_priority() {
-    local pid t cg tids=()
+    local pid t cg line comm tids=() io_only=()
+    local -A seen=()
 
     for pid; do
+        [[ -n ${seen[$pid]+x} ]] && continue
+        seen[$pid]=1
         [ -d "/proc/$pid/task" ] || continue
 
+        # wineserver sets its own priority.
+        read -r comm 2>/dev/null < "/proc/$pid/comm"
+        [[ $comm == wineserver ]] && continue
+
         # Nice is per thread: include every existing thread.
-        for t in /proc/"$pid"/task/*; do
-            tids+=("${t##*/}")
-        done
+        if wine_sets_nice "$pid"; then
+            for t in /proc/"$pid"/task/*; do
+                io_only+=("${t##*/}")
+            done
+        else
+            for t in /proc/"$pid"/task/*; do
+                tids+=("${t##*/}")
+            done
+        fi
 
         # Nice only applies within a cgroup; raise the cgroup's weight.
-        cg=$(sed -n 's/^0:://p' "/proc/$pid/cgroup" 2>/dev/null)
-        [ -n "$cg" ] && set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000
+        # cgroup v2 entry ("0::/path"); read with builtins, no sed fork.
+        cg=
+        while IFS= read -r line || [ -n "$line" ]; do
+            [[ $line == 0::* ]] && { cg=${line#0::}; break; }
+        done 2>/dev/null < "/proc/$pid/cgroup"
+        # cpu.weight only exists where systemd enabled the cpu controller.
+        if [ -n "$cg" ] && [ -z "${CG_DONE[$cg]+x}" ]; then
+            CG_DONE[$cg]=1
+            set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000 ||
+                echo "gameboost: could not set cpu.weight in $cg (cpu controller off?); CPU weight boost skipped" >&2
+        fi
     done
 
-    [ ${#tids[@]} -gt 0 ] || return
+    [ ${#tids[@]} -gt 0 ] && renice -n -11 -p "${tids[@]}" >/dev/null 2>&1
 
-    renice -n -11 -p "${tids[@]}" >/dev/null 2>&1
+    tids+=("${io_only[@]}")
+    [ ${#tids[@]} -gt 0 ] || return
     ionice -c2 -n0 -p "${tids[@]}" >/dev/null 2>&1 && return
 
     # ionice stops at the first vanished thread: retry one by one
@@ -133,10 +293,122 @@ set_process_priority() {
     done
 }
 
-main() {
-    mkdir -p "${STATE%/*}"
+# boost_tree ROOT...: priorities for the game PIDs and all their descendants.
+boost_tree() {
+    tree_pids "$@"
+    set_process_priority "${TREE[@]}"
+}
 
-    set_process_priority "$@"
+# Short EEVDF slice for the render thread. A thread with a shorter slice than
+# its competitors gets the CPU back sooner when it wakes; in testing, late
+# frames went from 12 to 0 at nice -11. Only one thread may get it: shortening
+# every thread made wake-ups about 9x worse. Picked once, ~30 s in: the
+# busiest SCHED_OTHER thread of the game's processes, preferring known engine
+# render-thread names and skipping known helper threads. Nothing to restore:
+# the thread ends with the game.
+RENDER_SLICE_NS=500000   # default slice is 1.6-3 ms depending on the kernel
+RENDER_SAMPLE_S=3
+RENDER_MIN_BUSY=20       # percent of one CPU over the sample
+
+boost_render_thread() {
+    local pid t tid name line head rest policy run base state d best= best_name= best_d=0 pref= pref_name= pref_d=0
+    local -a f
+    local -A t0=()
+
+    # Not with sched_ext, and only if it is shorter than the default slice.
+    read -r state 2>/dev/null < /sys/kernel/sched_ext/state && [[ $state == enabled ]] && return
+    read -r base 2>/dev/null < /sys/kernel/debug/sched/base_slice_ns &&
+        ((base <= RENDER_SLICE_NS)) && return
+
+    # Threads come and go: read errors are expected, so stderr is
+    # redirected once per loop.
+    for pid; do
+        for t in /proc/"$pid"/task/*; do
+            read -r run _ < "$t/schedstat" && t0[$t]=$run
+        done
+    done 2>/dev/null
+    sleep "$RENDER_SAMPLE_S"
+    [ -f "$FLAG" ] || return
+
+    for t in "${!t0[@]}"; do
+        read -r run _ < "$t/schedstat" || continue
+        read -r name < "$t/comm" || continue
+        case $name in
+            wineserver | dxvk-shader* | dxvk-submit | dxvk-queue | dxvk-frame | vkd3d* | *Worker* | *worker* | TaskGraph* | *Pool*) continue ;;
+        esac
+        # Policy is field 41 of stat; comm may contain spaces, so count
+        # from the last ')' (field 3 onward). Split with set -f (no
+        # globbing); bash would read a here-string one byte per syscall.
+        read -r line < "$t/stat" || continue
+        head=${line%") "*}
+        rest=${line#"$head") }
+        set -f
+        # shellcheck disable=SC2206 # word splitting is the point
+        f=($rest)
+        set +f
+        policy=${f[38]}
+        [[ $policy == 0 ]] || continue
+
+        d=$((run - t0[$t]))
+        case $name in
+            RenderThread* | RHIThread | UnityGfxDevice*)
+                ((d > pref_d)) && { pref=$t pref_name=$name pref_d=$d; } ;;
+        esac
+        ((d > best_d)) && { best=$t best_name=$name best_d=$d; }
+    done 2>/dev/null
+    [ -n "$pref" ] && { best=$pref best_name=$pref_name best_d=$pref_d; }
+
+    ((best_d * 100 >= RENDER_MIN_BUSY * RENDER_SAMPLE_S * 1000000000)) || return
+    tid=${best##*/}
+    [ -d "$best" ] && chrt -o -T "$RENDER_SLICE_NS" -p 0 "$tid" >/dev/null 2>&1 || return
+    echo 1 > "/proc/$tid/timerslack_ns" 2>/dev/null   # minimum timer slack
+    echo "gameboost: render thread $tid ($best_name): slice ${RENDER_SLICE_NS} ns"
+}
+
+# Processes the game starts after detection (Proton starting the .exe, a
+# launcher starting the game) are covered by running the priority step again.
+# Runs in the foreground: gameboostd SIGTERMs start.sh when game mode ends.
+FOLLOW_UP=(10 boost 20 render 27 boost)   # +10 s, +30 s (+3 s sample), +60 s
+
+follow_up() {
+    local i
+    for ((i = 0; i < ${#FOLLOW_UP[@]}; i += 2)); do
+        sleep "${FOLLOW_UP[i]}"
+        [ -f "$FLAG" ] || return
+        case ${FOLLOW_UP[i + 1]} in
+            boost) boost_tree "$@" ;;
+            render) tree_pids "$@"; boost_render_thread "${TREE[@]}" ;;
+        esac
+    done
+}
+
+# Printing waits until the game ends: Plasma's print-manager keeps cupsd
+# running for the whole session, so stop it (and its socket, which would
+# start it again) and let exit.sh start what was running.
+stop_cups() {
+    local unit state states active=()
+    # One query for both: a state line per unit, in order. Active as for
+    # is-active's exit status: active, reloading or refreshing.
+    { states=$(systemctl is-active cups.socket cups.service); } 2>/dev/null
+    states+=$'\n'
+    for unit in cups.socket cups.service; do
+        state=${states%%$'\n'*}
+        states=${states#*$'\n'}
+        case $state in active | reloading | refreshing) active+=("$unit") ;; esac
+    done
+    ((${#active[@]})) || return 0
+    printf '%s\n' "${active[@]}" > "$CUPS_STOPPED"
+    systemctl stop --no-block "${active[@]}"
+}
+
+main() {
+    [ -d "${STATE%/*}" ] || mkdir -p "${STATE%/*}"
+    # exit.sh restores exactly what is listed here; an empty file means
+    # "nothing was changed", not "start.sh never ran".
+    : >> "$STATE"
+    load_saved
+
+    boost_tree "$@"
 
     if ! is_laptop; then
         disable_sata_power_management
@@ -144,9 +416,17 @@ main() {
         disable_pcie_power_management
     fi
 
-    set_cpu_performance
-    set_gpu_performance
-    kill_background_processes
+    # Laptops on battery keep their power profile: only the priority boost
+    # applies. Checked once at game start; plugging in or unplugging during
+    # the game is not followed.
+    if ! is_laptop || on_ac; then
+        set_cpu_performance
+        set_gpu_performance
+    fi
+
+    stop_cups
+
+    follow_up "$@"
 }
 
 main "$@"

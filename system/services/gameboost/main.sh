@@ -17,6 +17,11 @@ readonly GAMEBOOST_FLAG="/run/gameboost/running.flag"
 readonly DAEMON="$SCRIPT_DIR/gameboostd"
 
 readonly GAME_PATTERNS=(
+    # Every Steam launch (native or Proton) runs under Steam's reaper from the
+    # first exec. " --" right after the id skips install scripts
+    # ("AppId=N Install=1 --").
+    "^[^ ]*/reaper SteamLaunch AppId=[0-9]+ --( |$)"
+
     ".*/proton waitforexitandrun"
     "minecraft.+\.jar"
     "/Games/.+\.(AppImage|x86_64|i386)$"
@@ -65,9 +70,15 @@ readonly EXCLUDED_PATTERNS=(
     "/dotnet"
     "/7z.exe" # Exclude archive extraction utilities used by game launchers.
 
-    # Package managers, shell utilities, and scripts
-    "(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
-    "\.sh$"
+    # Package managers, shell utilities, and scripts. Anchored to the program
+    # name, so a game whose arguments contain e.g. "find " still matches, and
+    # a Steam game whose launch target is a .sh script is not excluded.
+    "(^|/)(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
+    # The same tools behind a wrapper that forks them (sudo find …, timeout
+    # 60 rsync …): the wrapper process itself would be tracked otherwise.
+    "^([^ ]*/)?(sudo|doas|run0|timeout|time)( -[ugCDhpr] [^ ]+| -[^ ]+| [0-9.]+[smhd]?)* ([^ ]*/)?(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
+    "^[^ ]*\.sh( |$)"
+    "^([^ ]*/)?(ba|da)?sh( -[^ ]+)* [^ ]*\.sh( |$)"
 )
 
 # Build a single "a|b|c" regex from an array, accepting / or \ as separator.

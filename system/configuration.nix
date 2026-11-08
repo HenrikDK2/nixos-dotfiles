@@ -20,9 +20,6 @@
     max-jobs = "auto";
     cores = 0;
 
-    # Reduce duplicate files in the Nix store
-    auto-optimise-store = true;
-
     # Binary cache
     extra-substituters = [
       "https://nixos-x86-64-v3-repo.cachix.org"
@@ -34,14 +31,16 @@
   };
 
   # Garbage collection
+  # Weekly in effect: checked daily, and run once the last run is a week old
+  # and no game is active (gameboost/maintenance.nix).
   nix.gc = {
     automatic = true;
-    dates = "weekly";
+    dates = "daily";
     options = "--delete-older-than 14d";
   };
 
-  # Unattended Nix work (auto-upgrade, GC) runs in an idle-priority slice so it
-  # only uses CPU that the desktop are not using.
+  # Unattended Nix work (auto-upgrade, GC, store optimise) runs in an
+  # idle-priority slice so it only uses CPU that the desktop are not using.
   systemd.slices.background = {
     description = "Idle-priority background maintenance";
     sliceConfig.CPUWeight = "idle";
@@ -51,6 +50,24 @@
     Slice = "background.slice";
     IOSchedulingClass = "idle";
   };
+
+  # Deduplicate the store in a background run right after each weekly GC
+  # (nix-gc starts it, see gameboost/maintenance.nix), not during every build
+  # and download (auto-optimise-store). No timer of its own: the
+  # nix-optimise unit exists whenever Nix is enabled.
+  nix.optimise.automatic = false;
+
+  systemd.services.nix-optimise.serviceConfig.Slice = "background.slice";
+
+  # logrotate only rotates wtmp and btmp here (monthly, once over 1 MB), so a
+  # daily check is plenty (upstream's own timer), not hourly. Its config is
+  # still checked when the system is built, not again at every boot.
+  systemd.services.logrotate.startAt = lib.mkForce "daily";
+  systemd.timers.logrotate.timerConfig = {
+    Persistent = true;
+    RandomizedDelaySec = "1h";
+  };
+  systemd.services.logrotate-checkconf.enable = false;
 
   system.stateVersion = "26.11";
 }

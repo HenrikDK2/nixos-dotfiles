@@ -8,10 +8,16 @@
        config="$HOME/.config/faugus-launcher/config.json"
 
        if [ -f "$config" ]; then
-         ${pkgs.jq}/bin/jq \
+         # Guarded: activation runs under `set -e`, so a bare failing jq
+         # (malformed config) would abort the whole home-manager activation.
+         if ${pkgs.jq}/bin/jq \
            '.["default-runner"] = "proton-cachyos-x86_64-v3"' \
-           "$config" > "$config.tmp"
-         mv "$config.tmp" "$config"
+           "$config" > "$config.tmp"; then
+           mv "$config.tmp" "$config"
+         else
+           rm -f "$config.tmp"
+           echo "faugus: $config is not valid JSON; left unchanged." >&2
+         fi
        fi
      '';
  }

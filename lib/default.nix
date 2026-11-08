@@ -23,7 +23,18 @@ let
           [ ]
       )
       (builtins.attrNames files);
+
+  # Same test as is_laptop in the GameBoost and system-tuning scripts: a
+  # battery under <root>/sys/class/power_supply means a laptop.
+  hasBattery = root:
+    builtins.any
+      (bat: builtins.pathExists "${root}/sys/class/power_supply/${bat}")
+      [ "BAT0" "BAT1" ];
+
+  # Checked on the machine being built (builds run with --impure). Pure
+  # evaluation can't read /sys, so it reports a desktop.
+  isLaptop = !lib.inPureEvalMode && hasBattery "";
 in
 {
-  inherit importAll;
+  inherit importAll hasBattery isLaptop;
 }

@@ -24,6 +24,9 @@ in
   home-manager.users.${username} = {
     home.stateVersion = "26.05";
 
+    # `man home-configuration.nix`; generating it slows every evaluation.
+    manual.manpages.enable = false;
+
     imports = lib.flatten [
       (helpers.importAll ../services)
       (helpers.importAll ../modules)

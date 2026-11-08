@@ -15,28 +15,12 @@ SYSCTL_ARGS=()
 sc() { SYSCTL_ARGS+=("$1"); }
 apply_sysctls() { sysctl -w "${SYSCTL_ARGS[@]}"; }
 
-# Get total memory in KB
-total_memory=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-
-# Tiered min_free_kbytes based on total RAM
-if [ "$total_memory" -le $((8 * 1024 * 1024)) ]; then        # <= 8  GB
-    min_free_kbytes=8192
-elif [ "$total_memory" -le $((16 * 1024 * 1024)) ]; then     # <= 16 GB
-    min_free_kbytes=16384
-elif [ "$total_memory" -le $((32 * 1024 * 1024)) ]; then     # <= 32 GB
-    min_free_kbytes=32768
-else                                                         # >  32 GB
-    min_free_kbytes=65536
-fi
-
 # --------------------
 # PERFORMANCE TUNING
 # --------------------
 
 # Memory Management
-sc vm.swappiness=10                    # Reduce swap usage, keeping more processes in RAM for lower latency.
 sc vm.compaction_proactiveness=0       # Disable aggressive memory compaction to avoid CPU spikes.
-sc vm.min_free_kbytes=$min_free_kbytes # Maintain minimum free memory to prevent out-of-memory stalls.
 sc vm.max_map_count=2147483642         # Allow many memory mappings for large applications and databases.
 sc vm.zone_reclaim_mode=0              # Avoid reclaiming memory from remote NUMA nodes to reduce latency.
 sc vm.page_lock_unfairness=1           # Improve fairness when locking pages, reducing contention.
@@ -46,7 +30,6 @@ sc vm.dirty_background_ratio=5         # Start background flushing earlier to sm
 sc vm.vfs_cache_pressure=50            # Balance filesystem metadata caching to avoid frequent lookups.
 sc vm.dirty_writeback_centisecs=1500   # Control writeback interval to smooth out disk I/O.
 sc vm.stat_interval=5                  # Less CPU time spent on memory bookkeeping
-sc vm.watermark_scale_factor=1         # Minimize memory watermark calculations
 
 # CPU & Scheduler (Low Power Impact)
 sc kernel.sched_autogroup_enabled=0             # Disable autogrouping to prevent latency spikes for single-threaded processes.
@@ -68,27 +51,15 @@ sc net.core.netdev_budget=600                   # Improve network interrupt effi
 sc net.ipv4.tcp_no_metrics_save=1               # Eliminate periodic TCP housekeeping
 
 # Filesystem Optimizations
-sc fs.inotify.max_user_instances=1024
 sc fs.inotify.max_user_watches=524288
 sc fs.file-max=2097152
-
-# Transparent HugePages (THP)
-echo madvise > /sys/kernel/mm/transparent_hugepage/enabled      # Use THP on demand to reduce TLB misses for large memory allocations.
-echo advise > /sys/kernel/mm/transparent_hugepage/shmem_enabled # Apply THP to shared memory only when advised to reduce unnecessary CPU overhead.
-echo never > /sys/kernel/mm/transparent_hugepage/defrag         # Disable THP defragmentation to avoid CPU stalls during memory allocation.
-
-# Zswap
-echo zstd > /sys/module/zswap/parameters/compressor # Use fast compression algorithm to reduce I/O latency.
-echo Y > /sys/module/zswap/parameters/enabled       # Enable compressed swap to reduce pressure on physical memory and disk I/O.
 
 # KSM (Kernel Samepage Merging)
 echo 0 > /sys/kernel/mm/ksm/run # Disable KSM to avoid CPU overhead if virtual machines are not used.
 
 if is_laptop; then
-    sc vm.laptop_mode=1                         # Enable laptop mode for better power management
     sc kernel.timer_migration=1                 # Allow timer migration for better power management
 else
-    sc vm.laptop_mode=0                         # Disable laptop mode
     sc kernel.timer_migration=0                 # Pin timers to cores (prevents CPU sleep)
 fi
 
@@ -98,7 +69,6 @@ fi
 
 # Kernel Security
 sc kernel.dmesg_restrict=1               # Restrict dmesg access to root to prevent information leaks.
-sc kernel.ftrace_enabled=0               # Disable kernel function tracing to reduce potential leaks.
 sc kernel.kptr_restrict=2                # Hide kernel pointers from unprivileged users to protect kernel memory layout.
 sc kernel.unprivileged_bpf_disabled=1    # Disable unprivileged BPF programs to reduce attack surface.
 sc kernel.kexec_load_disabled=1          # Prevent unauthorized kernel loading.
@@ -128,7 +98,6 @@ sc net.ipv6.conf.default.accept_ra=0
 sc net.ipv4.icmp_echo_ignore_all=1               # Ignore ICMP echo requests to prevent network scanning.
 sc net.ipv6.icmp.echo_ignore_all=1
 sc net.ipv4.tcp_dsack=0                          # Disable duplicate selective ACK to reduce fingerprinting attacks.
-sc net.ipv4.tcp_fack=0                           # Disable FACK to reduce fingerprinting attacks.
 sc net.ipv6.conf.all.disable_ipv6=1              # Disable IPv6 if not needed to reduce attack surface.
 sc net.ipv6.conf.default.disable_ipv6=1
 sc net.ipv4.icmp_echo_ignore_broadcasts=1        # Ignore broadcast pings to prevent amplification attacks.

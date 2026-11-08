@@ -2,15 +2,32 @@
 
 # Original values saved by start.sh.
 STATE=/run/gameboost/state
+# CUPS units start.sh stopped for the game.
+CUPS_STOPPED=/run/gameboost/cups
+
+HAVE_STATE=0
+SAVED_FILES=()
+SAVED_VALUES=()
+
+load_state() {
+    local f v
+    [ -f "$STATE" ] || return 0
+    HAVE_STATE=1
+    while IFS='=' read -r f v || [ -n "$f" ]; do
+        SAVED_FILES+=("$f")
+        SAVED_VALUES+=("$v")
+    done < "$STATE"
+}
 
 # restore_saved REGEX: restore matching entries, newest first (GPU profile
 # before level). Returns 1 without a state file.
 restore_saved() {
-    [ -f "$STATE" ] || return 1
-    local f v
-    while IFS='=' read -r f v; do
-        [[ $f =~ $1 ]] && echo "$v" > "$f" 2>/dev/null
-    done < <(tac "$STATE")
+    ((HAVE_STATE)) || return 1
+    local i
+    for ((i = ${#SAVED_FILES[@]} - 1; i >= 0; i--)); do
+        [[ ${SAVED_FILES[i]} =~ $1 ]] &&
+            echo "${SAVED_VALUES[i]}" > "${SAVED_FILES[i]}" 2>/dev/null
+    done
     return 0
 }
 
@@ -21,7 +38,12 @@ is_laptop() {
 set_cpu_governor() {
     local cpu governor available epp
 
-    restore_saved 'cpufreq|intel_pstate|split_lock_mitigate|amd_x3d_mode|cpu\.weight' && return
+    systemctl stop --no-block gameboost-hold.service 2>/dev/null
+
+    restore_saved 'cpufreq|intel_pstate|amd_x3d_mode|cpu\.weight' && return
+
+    # power-profiles-daemon owns the governor and EPP: don't fight it.
+    systemctl is-active --quiet power-profiles-daemon.service && return
 
     # Fallback without state file.
     read -r available 2>/dev/null < /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
@@ -75,14 +97,23 @@ set_gpu_auto() {
     done
 }
 
+# One pgrep for the three process names; the .exe count only runs while
+# winedevice.exe does.
 kill_lingering_processes() {
-    ! pgrep -x gamescope-wl >/dev/null && pgrep -x gamescopereaper >/dev/null &&
-        killall -9 gamescopereaper 2>/dev/null
+    local name wl=0 reaper=0 winedevice=0
 
-    [ "$(pgrep -fc '\.exe$')" -eq 1 ] && pgrep -x winedevice.exe >/dev/null &&
+    while read -r _ name; do
+        case $name in
+            gamescope-wl) wl=1 ;;
+            gamescopereaper) reaper=1 ;;
+            *) winedevice=1 ;;
+        esac
+    done < <(pgrep -lx 'gamescope-wl|gamescopereaper|winedevice.exe')
+
+    ((!wl && reaper)) && killall -9 gamescopereaper 2>/dev/null
+
+    ((winedevice)) && [ "$(pgrep -fc '\.exe$')" -eq 1 ] &&
         killall -9 winedevice.exe 2>/dev/null
-
-    killall -q -9 chrome_crashpad 2>/dev/null
 }
 
 restore_sata_power_management() {
@@ -118,7 +149,32 @@ restore_pcie_power_management() {
     echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null
 }
 
+# Start the CUPS units start.sh stopped (socket first, then the service if
+# cupsd was running).
+start_cups() {
+    local units=()
+    [ -f "$CUPS_STOPPED" ] || return 0
+    mapfile -t units < "$CUPS_STOPPED"
+    rm -f "$CUPS_STOPPED"
+    ((${#units[@]})) && systemctl start --no-block "${units[@]}" 2>/dev/null
+}
+
+# An auto-upgrade that came due while the game ran (auto-update/main.sh
+# skipped it and left this marker) starts now. gameboostd removes
+# running.flag before running this script, so the upgrade gate lets it through.
+# Only when the game ended: not when GameBoost itself is stopping or
+# restarting (or crashed) while the game may still run; the marker then
+# waits for the next game exit.
+resume_deferred_upgrade() {
+    [ -e /run/nixos-upgrade.deferred ] || return 0
+    systemctl is-active --quiet gameboost.service || return 0
+    rm -f /run/nixos-upgrade.deferred
+    systemctl start --no-block nixos-upgrade.service 2>/dev/null
+}
+
 main() {
+    load_state
+
     if ! is_laptop; then
         restore_sata_power_management
         restore_nvme_power_management
@@ -130,6 +186,9 @@ main() {
     kill_lingering_processes
 
     rm -f "$STATE"
+
+    start_cups
+    resume_deferred_upgrade
 }
 
 main "$@"
