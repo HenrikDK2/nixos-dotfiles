@@ -6,7 +6,8 @@
         "Description": "Smooth, Hyprland-style animations for windows that are tiled, moved or resized by scripts",
         "Category": "Appearance",
         "EnabledByDefault": false,
-        "License": "MIT"
+        "License": "MIT",
+        "Version": "1.0"
     },
     "X-KDE-ConfigModule": "kcm_kwin4_genericscripted",
     "X-KDE-Ordering": "60",
