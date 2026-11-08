@@ -2,6 +2,7 @@
 
 # Original values, restored by exit.sh.
 STATE=/run/gameboost/state
+FLAG=/run/gameboost/running.flag
 
 # Files whose original value is already in $STATE. Kept in memory so the
 # "saved yet?" check is a hash lookup instead of a grep fork per sysfs file
@@ -153,12 +154,46 @@ disable_pcie_power_management() {
     set_saved /sys/module/pcie_aspm/parameters/policy performance
 }
 
+# tree_pids ROOT...: ROOT and every live descendant, in TREE. A game is often
+# forked well after detection by a process that is not itself a match (Steam's
+# pv-adverb/srt-bwrap, Proton's python script), and nice is only inherited at
+# fork, so boosting just the matched PIDs can miss the game entirely.
+# ppid map from /proc/PID/stat; comm may contain spaces or ')', so the fields
+# are parsed after the last ')'.
+tree_pids() {
+    local stat line rest pid ppid i
+    local -A kids=()
+    TREE=()
+
+    for stat in /proc/[0-9]*/stat; do
+        read -r line 2>/dev/null < "$stat" || continue
+        rest=${line##*) }
+        read -r _ ppid _ <<< "$rest"
+        pid=${stat#/proc/}
+        kids[$ppid]+=" ${pid%/stat}"
+    done
+
+    for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
+    for ((i = 0; i < ${#TREE[@]}; i++)); do
+        for pid in ${kids[${TREE[i]}]}; do TREE+=("$pid"); done
+    done
+}
+
+# cgroups already handled (weight set, or warned once that it can't be).
+declare -A CG_DONE=()
+
 set_process_priority() {
-    local pid t cg line tids=()
-    local -A warned=()
+    local pid t cg line comm tids=()
+    local -A seen=()
 
     for pid; do
+        [[ -n ${seen[$pid]+x} ]] && continue
+        seen[$pid]=1
         [ -d "/proc/$pid/task" ] || continue
+
+        # wineserver sets its own priority at startup and was never boosted.
+        read -r comm 2>/dev/null < "/proc/$pid/comm"
+        [[ $comm == wineserver ]] && continue
 
         # Nice is per thread: include every existing thread.
         for t in /proc/"$pid"/task/*; do
@@ -172,10 +207,10 @@ set_process_priority() {
             [[ $line == 0::* ]] && { cg=${line#0::}; break; }
         done 2>/dev/null < "/proc/$pid/cgroup"
         # cpu.weight only exists where systemd enabled the cpu controller.
-        if [ -n "$cg" ] && ! set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000 &&
-            [ -z "${warned[$cg]+x}" ]; then
-            warned[$cg]=1
-            echo "gameboost: could not set cpu.weight in $cg (cpu controller off?); CPU weight boost skipped" >&2
+        if [ -n "$cg" ] && [ -z "${CG_DONE[$cg]+x}" ]; then
+            CG_DONE[$cg]=1
+            set_saved "/sys/fs/cgroup$cg/cpu.weight" 1000 ||
+                echo "gameboost: could not set cpu.weight in $cg (cpu controller off?); CPU weight boost skipped" >&2
         fi
     done
 
@@ -190,11 +225,31 @@ set_process_priority() {
     done
 }
 
+# boost_tree ROOT...: priorities for the game PIDs and all their descendants.
+boost_tree() {
+    tree_pids "$@"
+    set_process_priority "${TREE[@]}"
+}
+
+# Processes the game starts after detection (Proton starting the .exe, a
+# launcher starting the game) are covered by running the priority step again.
+# Runs in the foreground: gameboostd SIGTERMs start.sh when game mode ends.
+REBOOST_AFTER=(10 50)   # seconds: at +10 s and +60 s
+
+follow_up() {
+    local delay
+    for delay in "${REBOOST_AFTER[@]}"; do
+        sleep "$delay"
+        [ -f "$FLAG" ] || return
+        boost_tree "$@"
+    done
+}
+
 main() {
     mkdir -p "${STATE%/*}"
     load_saved
 
-    set_process_priority "$@"
+    boost_tree "$@"
 
     if ! is_laptop; then
         disable_sata_power_management
@@ -204,6 +259,8 @@ main() {
 
     set_cpu_performance
     set_gpu_performance
+
+    follow_up "$@"
 }
 
 main "$@"
