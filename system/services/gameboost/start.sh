@@ -68,9 +68,11 @@ on_ac() {
 ppd_drives_cpu() {
     local driver status
     systemctl is-active --quiet power-profiles-daemon.service || return 1
-    driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
+    # stderr is redirected outside $(): bash runs a $() holding one command
+    # without redirections by exec, with no second fork.
+    { driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
         /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles \
-        CpuDriver 2>/dev/null) || return 1
+        CpuDriver); } 2>/dev/null || return 1
     case $driver in
         's "intel_pstate"') return 0 ;;
         's "amd_pstate"')
@@ -189,20 +191,25 @@ disable_pcie_power_management() {
 # fork, so boosting just the matched PIDs can miss the game entirely.
 # ppid map from /proc/PID/stat; comm may contain spaces, ')' or newlines, so
 # the whole file is read and the fields are parsed after the last ') '.
+# This loop covers every process, several times per game: it uses expansions
+# that are linear in the line length and no here-strings (which bash reads one
+# byte per syscall), and redirects stderr once.
 tree_pids() {
-    local stat line rest pid ppid i
+    local stat line head rest pid ppid i
     local -A kids=()
     TREE=()
 
     for stat in /proc/[0-9]*/stat; do
         # read returns 1 at EOF (no NUL in the file); line is still filled.
-        read -r -d '' line 2>/dev/null < "$stat"
-        rest=${line##*) }
-        read -r _ ppid _ <<< "$rest"
+        read -r -d '' line < "$stat"
+        head=${line%") "*}       # up to the last ') '
+        rest=${line#"$head") }   # after it; the whole line if none
+        ppid=${rest#* }          # "STATE PPID ..."
+        ppid=${ppid%% *}
         [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
         pid=${stat#/proc/}
         kids[$ppid]+=" ${pid%/stat}"
-    done
+    done 2>/dev/null
 
     for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
     for ((i = 0; i < ${#TREE[@]}; i++)); do
@@ -227,7 +234,8 @@ wine_sets_nice() {
     esac
     while IFS= read -r line; do
         if [[ $line == "Max nice priority"* ]]; then
-            read -r _ _ _ soft _ <<< "$line"
+            [[ $line =~ ^Max\ nice\ priority\ +([^ ]*) ]]
+            soft=${BASH_REMATCH[1]}
             [[ $soft == unlimited ]] || ((soft > 20))
             return
         fi
@@ -303,7 +311,7 @@ RENDER_SAMPLE_S=3
 RENDER_MIN_BUSY=20       # percent of one CPU over the sample
 
 boost_render_thread() {
-    local pid t tid name line rest policy run base state d best= best_name= best_d=0 pref= pref_name= pref_d=0
+    local pid t tid name line head rest policy run base state d best= best_name= best_d=0 pref= pref_name= pref_d=0
     local -a f
     local -A t0=()
 
@@ -312,25 +320,32 @@ boost_render_thread() {
     read -r base 2>/dev/null < /sys/kernel/debug/sched/base_slice_ns &&
         ((base <= RENDER_SLICE_NS)) && return
 
+    # Threads come and go: read errors are expected, so stderr is
+    # redirected once per loop.
     for pid; do
         for t in /proc/"$pid"/task/*; do
-            read -r run _ 2>/dev/null < "$t/schedstat" && t0[$t]=$run
+            read -r run _ < "$t/schedstat" && t0[$t]=$run
         done
-    done
+    done 2>/dev/null
     sleep "$RENDER_SAMPLE_S"
     [ -f "$FLAG" ] || return
 
     for t in "${!t0[@]}"; do
-        read -r run _ 2>/dev/null < "$t/schedstat" || continue
-        read -r name 2>/dev/null < "$t/comm" || continue
+        read -r run _ < "$t/schedstat" || continue
+        read -r name < "$t/comm" || continue
         case $name in
             wineserver | dxvk-shader* | dxvk-submit | dxvk-queue | dxvk-frame | vkd3d* | *Worker* | *worker* | TaskGraph* | *Pool*) continue ;;
         esac
         # Policy is field 41 of stat; comm may contain spaces, so count
-        # from the last ')' (field 3 onward).
-        read -r line 2>/dev/null < "$t/stat" || continue
-        rest=${line##*) }
-        read -r -a f <<< "$rest"
+        # from the last ')' (field 3 onward). Split with set -f (no
+        # globbing); bash would read a here-string one byte per syscall.
+        read -r line < "$t/stat" || continue
+        head=${line%") "*}
+        rest=${line#"$head") }
+        set -f
+        # shellcheck disable=SC2206 # word splitting is the point
+        f=($rest)
+        set +f
         policy=${f[38]}
         [[ $policy == 0 ]] || continue
 
@@ -340,7 +355,7 @@ boost_render_thread() {
                 ((d > pref_d)) && { pref=$t pref_name=$name pref_d=$d; } ;;
         esac
         ((d > best_d)) && { best=$t best_name=$name best_d=$d; }
-    done
+    done 2>/dev/null
     [ -n "$pref" ] && { best=$pref best_name=$pref_name best_d=$pref_d; }
 
     ((best_d * 100 >= RENDER_MIN_BUSY * RENDER_SAMPLE_S * 1000000000)) || return
@@ -371,9 +386,15 @@ follow_up() {
 # running for the whole session, so stop it (and its socket, which would
 # start it again) and let exit.sh start what was running.
 stop_cups() {
-    local unit active=()
+    local unit state states active=()
+    # One query for both: a state line per unit, in order. Active as for
+    # is-active's exit status: active, reloading or refreshing.
+    { states=$(systemctl is-active cups.socket cups.service); } 2>/dev/null
+    states+=$'\n'
     for unit in cups.socket cups.service; do
-        systemctl is-active --quiet "$unit" 2>/dev/null && active+=("$unit")
+        state=${states%%$'\n'*}
+        states=${states#*$'\n'}
+        case $state in active | reloading | refreshing) active+=("$unit") ;; esac
     done
     ((${#active[@]})) || return 0
     printf '%s\n' "${active[@]}" > "$CUPS_STOPPED"
@@ -381,7 +402,7 @@ stop_cups() {
 }
 
 main() {
-    mkdir -p "${STATE%/*}"
+    [ -d "${STATE%/*}" ] || mkdir -p "${STATE%/*}"
     # exit.sh restores exactly what is listed here; an empty file means
     # "nothing was changed", not "start.sh never ran".
     : >> "$STATE"
