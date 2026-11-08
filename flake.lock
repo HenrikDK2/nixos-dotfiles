@@ -183,6 +183,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-zed": {
+      "locked": {
+        "lastModified": 1794126597,
+        "narHash": "sha256-gyzx4ADMhQ4Q9jgVMVgLO21W8zusME7WZRcofrEiQ0U=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "5e7788fd2ced82eb31da7f5329b55e49dc1587c8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "5e7788fd2ced82eb31da7f5329b55e49dc1587c8",
+        "type": "github"
+      }
+    },
     "nixpkgs_2": {
       "locked": {
         "lastModified": 1793931523,
@@ -273,6 +289,7 @@
         "home-manager": "home-manager",
         "nixos-x86-64-v3-repo": "nixos-x86-64-v3-repo",
         "nixpkgs": "nixpkgs_4",
+        "nixpkgs-zed": "nixpkgs-zed",
         "plasma-manager": "plasma-manager",
         "steam-config-nix": "steam-config-nix"
       }
