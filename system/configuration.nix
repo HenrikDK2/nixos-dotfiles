@@ -60,5 +60,15 @@
 
   systemd.services.nix-optimise.serviceConfig.Slice = "background.slice";
 
+  # logrotate only rotates wtmp and btmp here (monthly, once over 1 MB), so a
+  # daily check is plenty (upstream's own timer), not hourly. Its config is
+  # still checked when the system is built, not again at every boot.
+  systemd.services.logrotate.startAt = lib.mkForce "daily";
+  systemd.timers.logrotate.timerConfig = {
+    Persistent = true;
+    RandomizedDelaySec = "1h";
+  };
+  systemd.services.logrotate-checkconf.enable = false;
+
   system.stateVersion = "26.11";
 }

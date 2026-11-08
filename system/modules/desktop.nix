@@ -72,6 +72,16 @@ in
   documentation.nixos.enable = false;
   documentation.info.enable = false;
 
+  # fish turns on the man-page index (for `man <Tab>` completions) and has it
+  # rebuilt at every boot: an rsync --checksum of every man page plus mandb.
+  # Build it with the system instead (during auto-upgrade, in the background
+  # slice); man, apropos and fish completions work the same.
+  documentation.man.cache.generateAtRuntime = false;
+
+  # Started over D-Bus on first use (System Settings > Users, the account
+  # portal) instead of at every boot; no session component needs it at login.
+  systemd.services.accounts-daemon.wantedBy = lib.mkForce [ ];
+
   environment = {
     sessionVariables.SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     plasma6.excludePackages = with pkgs.kdePackages; [
