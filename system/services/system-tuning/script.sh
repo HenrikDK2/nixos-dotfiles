@@ -15,12 +15,6 @@ SYSCTL_ARGS=()
 sc() { SYSCTL_ARGS+=("$1"); }
 apply_sysctls() { sysctl -w "${SYSCTL_ARGS[@]}"; }
 
-# vm.min_free_kbytes and vm.watermark_scale_factor are left to the kernel:
-# lowering them made allocations stall in direct reclaim ~4.5x more often
-# under memory pressure. With THP enabled the kernel already raises
-# min_free_kbytes to its THP recommendation at boot.
-# vm.swappiness is set declaratively with zram (system/modules/swap.nix).
-
 # --------------------
 # PERFORMANCE TUNING
 # --------------------
@@ -60,12 +54,6 @@ sc net.ipv4.tcp_no_metrics_save=1               # Eliminate periodic TCP houseke
 sc fs.inotify.max_user_watches=524288
 sc fs.file-max=2097152
 
-# Transparent HugePages: kept at the CachyOS kernel defaults (enabled=always,
-# defrag=defer+madvise, shmem advise). defrag=never made hugepage requests
-# fall back to small pages far more often under memory pressure.
-
-# Swap: zram with zswap disabled, see system/modules/swap.nix.
-
 # KSM (Kernel Samepage Merging)
 echo 0 > /sys/kernel/mm/ksm/run # Disable KSM to avoid CPU overhead if virtual machines are not used.
 
@@ -80,10 +68,6 @@ fi
 # --------------------
 
 # Kernel Security
-# Not set any more: kernel.ftrace_enabled (on 7.3 writing 0 fails, which made
-# the whole sysctl call exit 1), vm.laptop_mode (a no-op that warns on 7.x),
-# net.ipv4.tcp_fack (no effect) and fs.inotify.max_user_instances (1024 was
-# far below the NixOS default of 524288).
 sc kernel.dmesg_restrict=1               # Restrict dmesg access to root to prevent information leaks.
 sc kernel.kptr_restrict=2                # Hide kernel pointers from unprivileged users to protect kernel memory layout.
 sc kernel.unprivileged_bpf_disabled=1    # Disable unprivileged BPF programs to reduce attack surface.

@@ -11,9 +11,8 @@
     lact.enable = true;
     geoclue2.enable = false;
 
-    # Screen reader and text-to-speech, on by default with Plasma. Off: they
-    # are not used here, and websites can no longer start speech-dispatcher
-    # through Firefox.
+    # Screen reader and text-to-speech, on by default with Plasma. Not used
+    # here; off, websites can't start speech-dispatcher through Firefox either.
     orca.enable = false;
     speechd.enable = false;
 

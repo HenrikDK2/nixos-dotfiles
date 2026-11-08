@@ -4,10 +4,8 @@
 STATE=/run/gameboost/state
 FLAG=/run/gameboost/running.flag
 
-# Files whose original value is already in $STATE. Kept in memory so the
-# "saved yet?" check is a hash lookup instead of a grep fork per sysfs file
-# (hundreds per game launch). Seeded from an existing $STATE so originals
-# left by an interrupted run are never overwritten.
+# Files whose original value is already in $STATE. Seeded from an existing
+# $STATE so originals left by an interrupted run are never overwritten.
 declare -A SAVED=()
 
 load_saved() {
@@ -115,7 +113,7 @@ try_write() {
 
 # profile_indices FILE: set idx to the first field of the first line naming
 # 3D_FULL_SCREEN and cur to that of the first line containing '*' (the active
-# profile). Same result as awk '/RE/ {print $1; exit}', without two forks.
+# profile).
 profile_indices() {
     local line
     idx= cur=
@@ -242,7 +240,7 @@ set_process_priority() {
         seen[$pid]=1
         [ -d "/proc/$pid/task" ] || continue
 
-        # wineserver sets its own priority at startup and was never boosted.
+        # wineserver sets its own priority.
         read -r comm 2>/dev/null < "/proc/$pid/comm"
         [[ $comm == wineserver ]] && continue
 

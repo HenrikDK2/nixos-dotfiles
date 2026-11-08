@@ -51,10 +51,8 @@
     IOSchedulingClass = "idle";
   };
 
-  # Deduplicate the store once a week, after the GC, instead of during every
-  # build and download (auto-optimise-store): measured 55% slower store
-  # inserts and 5.6% slower substitution with it inline. The disk savings are
-  # the same; new paths just wait for the next run to be deduplicated.
+  # Deduplicate the store in a weekly background run, not during every build
+  # and download (auto-optimise-store).
   nix.optimise = {
     automatic = true;
     dates = [ "03:45" ];   # weekly in effect, see nix.gc above

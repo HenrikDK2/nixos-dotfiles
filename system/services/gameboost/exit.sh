@@ -3,7 +3,6 @@
 # Original values saved by start.sh.
 STATE=/run/gameboost/state
 
-# $STATE is read once into memory instead of once (via tac) per category.
 HAVE_STATE=0
 SAVED_FILES=()
 SAVED_VALUES=()

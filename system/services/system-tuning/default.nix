@@ -11,7 +11,6 @@
       "NetworkManager.service"
     ];
 
-    # Only sysctl is needed; coreutils/systemd are in every unit's default PATH.
     path = [ pkgs.procps ];
 
     # nixos-rebuild switch restarts systemd-sysctl whenever the NixOS sysctl

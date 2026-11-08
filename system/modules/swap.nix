@@ -19,7 +19,6 @@
 
   # systemd-oomd only acts on cgroups with ManagedOOM* set, and nothing here
   # sets any (systemd.oomd.enable*Slice* are all off). It still wakes every
-  # second to check its empty list, so it is off; the kernel OOM killer and
-  # zram above are unchanged.
+  # second to check its empty list, so it is off.
   systemd.oomd.enable = false;
 }

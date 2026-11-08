@@ -596,7 +596,7 @@ function directionalTile(snapshot, source, direction, accept) {
         const score = primary + secondary * 1.5;
 
         // Ask accept (which may scan every window) only about a tile that would
-        // become the best; written as !(a < b) so a NaN score is skipped as before.
+        // become the best; written as !(a < b) so a NaN score is skipped.
         if (!(score < bestScore)) continue;
         if (accept && !accept(entry.tile)) continue;
 
