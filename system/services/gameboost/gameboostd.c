@@ -721,11 +721,12 @@ static void on_rename(pid_t tgid, const char *comm) {
 
 /* Renames are coming in faster than the socket queue can hold (thread
  * naming bursts). Lost renames are not an exec storm: stop watching renames,
- * give each watched process one late re-check instead, and let a full scan
- * catch any exec events lost with them. */
+ * re-check each watched process later (it is watched again then if its
+ * deadline has not passed), and let a full scan catch any exec events lost
+ * with them. */
 static void give_up_renames(int64_t now) {
   for (int i = 0; i < nwatch; ++i)
-    queue_check(watch[i].tgid, now + WATCH_FULL_RETRY_MS, -1);
+    queue_check(watch[i].tgid, now + WATCH_FULL_RETRY_MS, watch[i].deadline);
   nwatch = 0;
   listen_for(PROC_EVENT_EXEC);
   need_scan = 1;
