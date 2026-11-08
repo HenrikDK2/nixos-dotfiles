@@ -2,6 +2,8 @@
 
 # Original values, restored by exit.sh.
 STATE=/run/gameboost/state
+# CUPS units stopped for the game, for exit.sh.
+CUPS_STOPPED=/run/gameboost/cups
 FLAG=/run/gameboost/running.flag
 
 # Files whose original value is already in $STATE. Seeded from an existing
@@ -365,6 +367,19 @@ follow_up() {
     done
 }
 
+# Printing waits until the game ends: Plasma's print-manager keeps cupsd
+# running for the whole session, so stop it (and its socket, which would
+# start it again) and let exit.sh start what was running.
+stop_cups() {
+    local unit active=()
+    for unit in cups.socket cups.service; do
+        systemctl is-active --quiet "$unit" 2>/dev/null && active+=("$unit")
+    done
+    ((${#active[@]})) || return 0
+    printf '%s\n' "${active[@]}" > "$CUPS_STOPPED"
+    systemctl stop --no-block "${active[@]}"
+}
+
 main() {
     mkdir -p "${STATE%/*}"
     # exit.sh restores exactly what is listed here; an empty file means
@@ -387,6 +402,8 @@ main() {
         set_cpu_performance
         set_gpu_performance
     fi
+
+    stop_cups
 
     follow_up "$@"
 }

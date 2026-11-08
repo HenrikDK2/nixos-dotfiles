@@ -37,6 +37,9 @@ cmd=$(LC_ALL=C; printf '%s' "${cmd//[[:cntrl:]]/?}")
 if systemctl is-active --quiet gameboost-hold.service 2>/dev/null; then
     echo "  power:    performance profile held through power-profiles-daemon"
 fi
+if [[ -s ${state%/*}/cups ]]; then
+    echo "  printing: CUPS stopped until the game ends"
+fi
 
 [[ -s $state ]] || exit 0
 

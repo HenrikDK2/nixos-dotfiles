@@ -2,6 +2,8 @@
 
 # Original values saved by start.sh.
 STATE=/run/gameboost/state
+# CUPS units start.sh stopped for the game.
+CUPS_STOPPED=/run/gameboost/cups
 
 HAVE_STATE=0
 SAVED_FILES=()
@@ -136,6 +138,16 @@ restore_pcie_power_management() {
     echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null
 }
 
+# Start the CUPS units start.sh stopped (socket first, then the service if
+# cupsd was running).
+start_cups() {
+    local units=()
+    [ -f "$CUPS_STOPPED" ] || return 0
+    mapfile -t units < "$CUPS_STOPPED"
+    rm -f "$CUPS_STOPPED"
+    ((${#units[@]})) && systemctl start --no-block "${units[@]}" 2>/dev/null
+}
+
 # An auto-upgrade that came due while the game ran (auto-update/main.sh
 # skipped it and left this marker) starts now. gameboostd removes
 # running.flag before running this script, so the upgrade gate lets it through.
@@ -160,6 +172,7 @@ main() {
 
     rm -f "$STATE"
 
+    start_cups
     resume_deferred_upgrade
 }
 
