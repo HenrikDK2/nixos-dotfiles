@@ -75,7 +75,8 @@
  * kernel reports as a COMM event. A process whose cmdline still mentions wine
  * at its first check is watched for that rename for up to WATCH_MS (a first
  * wineboot of a prefix can take a while), and re-checked the moment it
- * happens. COMM events are only requested while something is watched: every
+ * happens. The window counts from that first check and is never extended:
+ * after it, the process only gets one last check. COMM events are only requested while something is watched: every
  * named thread on the system produces one. */
 #define WATCH_MAX 64
 #define WATCH_MS 120000
@@ -493,6 +494,7 @@ static struct {
   pid_t pid;
   int tries;
   int64_t due;
+  int64_t deadline; /* rename watch: 0 = not started yet, -1 = over */
 } pending[MAX_PENDING];
 static int npending;
 static unsigned long stat_events, stat_checks, stat_storms;
@@ -502,6 +504,7 @@ static int overflowed, stormy;
 
 static struct {
   pid_t tgid;
+  int queued; /* a check for it is pending */
   int64_t deadline;
 } watch[WATCH_MAX];
 static int nwatch;
@@ -661,7 +664,7 @@ static void leave_game_mode(void) {
 /* No duplicate check: a PID that exec'd twice in a second just gets checked
  * twice (one cheap kill(0) each), which is cheaper than a linear search per
  * event under exec bursts. */
-static void queue_check(pid_t pid, int64_t due) {
+static void queue_check(pid_t pid, int64_t due, int64_t deadline) {
   if (npending == MAX_PENDING) {
     overflowed = 1; /* storm mode takes over */
     return;
@@ -669,13 +672,14 @@ static void queue_check(pid_t pid, int64_t due) {
   pending[npending].pid = pid;
   pending[npending].tries = 0;
   pending[npending].due = due;
+  pending[npending].deadline = deadline;
   ++npending;
 }
 
 static void add_pending(pid_t pid, int64_t due) {
   ++stat_events;
   ++win_events;
-  queue_check(pid, due);
+  queue_check(pid, due, 0);
 }
 
 static int watched(pid_t tgid) {
@@ -692,11 +696,12 @@ static void unwatch(int i) {
 }
 
 /* Returns 1 if TGID is newly watched (COMM events are on from here). */
-static int watch_add(pid_t tgid, int64_t now) {
+static int watch_add(pid_t tgid, int64_t deadline) {
   if (watched(tgid) >= 0 || nwatch == WATCH_MAX)
     return 0;
   watch[nwatch].tgid = tgid;
-  watch[nwatch].deadline = now + WATCH_MS;
+  watch[nwatch].queued = 0;
+  watch[nwatch].deadline = deadline;
   ++nwatch;
   listen_for(PROC_EVENT_EXEC | PROC_EVENT_COMM);
   return 1;
@@ -708,10 +713,10 @@ static int watch_add(pid_t tgid, int64_t now) {
 static void on_rename(pid_t tgid, const char *comm) {
   ++stat_renames;
   int i = watched(tgid);
-  if (i < 0 || !strncmp(comm, "wine", 4))
+  if (i < 0 || watch[i].queued || !strncmp(comm, "wine", 4))
     return;
-  unwatch(i);
-  queue_check(tgid, 0); /* check now */
+  watch[i].queued = 1; /* one check per batch of renames */
+  queue_check(tgid, 0, watch[i].deadline);
 }
 
 /* Renames are coming in faster than the socket queue can hold (thread
@@ -720,7 +725,7 @@ static void on_rename(pid_t tgid, const char *comm) {
  * catch any exec events lost with them. */
 static void give_up_renames(int64_t now) {
   for (int i = 0; i < nwatch; ++i)
-    queue_check(watch[i].tgid, now + WATCH_FULL_RETRY_MS);
+    queue_check(watch[i].tgid, now + WATCH_FULL_RETRY_MS, -1);
   nwatch = 0;
   listen_for(PROC_EVENT_EXEC);
   need_scan = 1;
@@ -735,7 +740,7 @@ static void expire_watch(int64_t now) {
     if (kill(watch[i].tgid, 0) && errno == ESRCH) {
       unwatch(i);
     } else if (watch[i].deadline <= now) {
-      queue_check(watch[i].tgid, 0);
+      queue_check(watch[i].tgid, 0, -1);
       unwatch(i);
     } else {
       ++i;
@@ -816,20 +821,31 @@ static int check_pending(void) {
     ssize_t n = kill(pending[i].pid, 0) && errno == ESRCH
                     ? -1
                     : read_cmdline(pending[i].pid, buf, &cmd);
-    int keep = 0;
+    int keep = 0, w = watched(pending[i].pid);
+    if (w >= 0)
+      watch[w].queued = 0;
     if (n > 0 && is_game(cmd, (size_t)n)) {
       hit = 1;
     } else if (n > 0 && memmem(cmd, (size_t)n, "wine", 4) &&
                !set_matches(&excls, cmd, (size_t)n)) {
-      if (watch_add(pending[i].pid, now)) {
+      int64_t deadline =
+          pending[i].deadline ? pending[i].deadline : now + WATCH_MS;
+      if (w >= 0) {
+        /* still watched: the next rename brings the next check */
+      } else if (deadline <= now) {
+        /* its watch is over: this was the last check */
+      } else if (watch_add(pending[i].pid, deadline)) {
         /* It may have been renamed just before COMM events were on. */
         n = read_cmdline(pending[i].pid, buf, &cmd);
         hit |= n > 0 && is_game(cmd, (size_t)n);
       } else if (watched(pending[i].pid) < 0 && !pending[i].tries) {
         pending[i].due = now + WATCH_FULL_RETRY_MS; /* list full */
+        pending[i].deadline = deadline;
         pending[i].tries = 1;
         keep = 1;
       }
+    } else if (w >= 0) {
+      unwatch(w); /* gone, or no longer a Wine command line */
     }
     if (keep)
       ++i;
