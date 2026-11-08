@@ -97,11 +97,22 @@ set_gpu_auto() {
     done
 }
 
+# One pgrep for the three process names; the .exe count only runs while
+# winedevice.exe does.
 kill_lingering_processes() {
-    ! pgrep -x gamescope-wl >/dev/null && pgrep -x gamescopereaper >/dev/null &&
-        killall -9 gamescopereaper 2>/dev/null
+    local name wl=0 reaper=0 winedevice=0
 
-    [ "$(pgrep -fc '\.exe$')" -eq 1 ] && pgrep -x winedevice.exe >/dev/null &&
+    while read -r _ name; do
+        case $name in
+            gamescope-wl) wl=1 ;;
+            gamescopereaper) reaper=1 ;;
+            *) winedevice=1 ;;
+        esac
+    done < <(pgrep -lx 'gamescope-wl|gamescopereaper|winedevice.exe')
+
+    ((!wl && reaper)) && killall -9 gamescopereaper 2>/dev/null
+
+    ((winedevice)) && [ "$(pgrep -fc '\.exe$')" -eq 1 ] &&
         killall -9 winedevice.exe 2>/dev/null
 }
 
