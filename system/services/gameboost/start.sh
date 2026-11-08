@@ -367,6 +367,9 @@ follow_up() {
 
 main() {
     mkdir -p "${STATE%/*}"
+    # exit.sh restores exactly what is listed here; an empty file means
+    # "nothing was changed", not "start.sh never ran".
+    : >> "$STATE"
     load_saved
 
     boost_tree "$@"
