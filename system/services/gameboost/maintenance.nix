@@ -21,7 +21,7 @@ let
       # gameboost-maint-gate game                 (the job's ExecCondition)
       # gameboost-maint-gate due NAME MIN_AGE_S   (NAME-scheduled's ExecCondition)
       # gameboost-maint-gate done NAME            (the job's ExecStartPost)
-      if [[ $1 != done && -e /run/gameboost/running.flag ]]; then
+      if [[ $1 != "done" && -e /run/gameboost/running.flag ]]; then
         echo "A game is running (GameBoost); skipping until the next check."
         exit 1
       fi
