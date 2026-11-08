@@ -11,10 +11,12 @@ readonly git_cmd=(git -C "$flake"
 
 # schedule_check EPOCH: one more check at that time (nixos-upgrade-due.timer).
 # A wall-clock timer, so time spent asleep counts and a check that came due
-# during sleep runs right after resume.
+# during sleep runs right after resume. The time is given in UTC: a local
+# time is ambiguous in the hour repeated when daylight saving time ends.
 schedule_check() {
   local when
-  printf -v when '%(%F %T)T' "$1"
+  local -x TZ=UTC0
+  printf -v when '%(%F %T UTC)T' "$1"
   systemctl stop nixos-upgrade-due.timer 2>/dev/null
   systemd-run --quiet --collect --unit=nixos-upgrade-due \
     --on-calendar="$when" \
@@ -34,9 +36,11 @@ fi
 # 255 = failed, so nixos-upgrade.service is retried (Restart=on-failure).
 
 # ---------- Gate 1: GameBoost running ----------
-# GameBoost's exit.sh starts the upgrade again when the game ends.
+# GameBoost's exit.sh starts the upgrade again when the game ends. In case
+# it can't (GameBoost stopped mid-game), check again in an hour.
 if [[ -e $gate_flag ]]; then
   : > "$gate_deferred"
+  schedule_check $((EPOCHSECONDS + 3600))
   echo "GameBoost is running; skipping until the game ends."
   exit 1
 fi
