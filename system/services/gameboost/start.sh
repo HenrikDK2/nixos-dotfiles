@@ -289,17 +289,79 @@ boost_tree() {
     set_process_priority "${TREE[@]}"
 }
 
+# Short EEVDF slice for the render thread. A thread with a shorter slice than
+# its competitors gets the CPU back sooner when it wakes; in testing, late
+# frames went from 12 to 0 at nice -11. Only one thread may get it: shortening
+# every thread made wake-ups about 9x worse. Picked once, ~30 s in: the
+# busiest SCHED_OTHER thread of the game's processes, preferring known engine
+# render-thread names and skipping known helper threads. Nothing to restore:
+# the thread ends with the game.
+RENDER_SLICE_NS=500000   # default slice is 1.6-3 ms depending on the kernel
+RENDER_SAMPLE_S=3
+RENDER_MIN_BUSY=20       # percent of one CPU over the sample
+
+boost_render_thread() {
+    local pid t tid name line rest policy run base state d best= best_name= best_d=0 pref= pref_name= pref_d=0
+    local -a f
+    local -A t0=()
+
+    # Not with sched_ext, and only if it is shorter than the default slice.
+    read -r state 2>/dev/null < /sys/kernel/sched_ext/state && [[ $state == enabled ]] && return
+    read -r base 2>/dev/null < /sys/kernel/debug/sched/base_slice_ns &&
+        ((base <= RENDER_SLICE_NS)) && return
+
+    for pid; do
+        for t in /proc/"$pid"/task/*; do
+            read -r run _ 2>/dev/null < "$t/schedstat" && t0[$t]=$run
+        done
+    done
+    sleep "$RENDER_SAMPLE_S"
+    [ -f "$FLAG" ] || return
+
+    for t in "${!t0[@]}"; do
+        read -r run _ 2>/dev/null < "$t/schedstat" || continue
+        read -r name 2>/dev/null < "$t/comm" || continue
+        case $name in
+            wineserver | dxvk-shader* | dxvk-submit | dxvk-queue | dxvk-frame | vkd3d* | *Worker* | *worker* | TaskGraph* | *Pool*) continue ;;
+        esac
+        # Policy is field 41 of stat; comm may contain spaces, so count
+        # from the last ')' (field 3 onward).
+        read -r line 2>/dev/null < "$t/stat" || continue
+        rest=${line##*) }
+        read -r -a f <<< "$rest"
+        policy=${f[38]}
+        [[ $policy == 0 ]] || continue
+
+        d=$((run - t0[$t]))
+        case $name in
+            RenderThread* | RHIThread | UnityGfxDevice*)
+                ((d > pref_d)) && { pref=$t pref_name=$name pref_d=$d; } ;;
+        esac
+        ((d > best_d)) && { best=$t best_name=$name best_d=$d; }
+    done
+    [ -n "$pref" ] && { best=$pref best_name=$pref_name best_d=$pref_d; }
+
+    ((best_d * 100 >= RENDER_MIN_BUSY * RENDER_SAMPLE_S * 1000000000)) || return
+    tid=${best##*/}
+    [ -d "$best" ] && chrt -o -T "$RENDER_SLICE_NS" -p 0 "$tid" >/dev/null 2>&1 || return
+    echo 1 > "/proc/$tid/timerslack_ns" 2>/dev/null   # minimum timer slack
+    echo "gameboost: render thread $tid ($best_name): slice ${RENDER_SLICE_NS} ns"
+}
+
 # Processes the game starts after detection (Proton starting the .exe, a
 # launcher starting the game) are covered by running the priority step again.
 # Runs in the foreground: gameboostd SIGTERMs start.sh when game mode ends.
-REBOOST_AFTER=(10 50)   # seconds: at +10 s and +60 s
+FOLLOW_UP=(10 boost 20 render 27 boost)   # +10 s, +30 s (+3 s sample), +60 s
 
 follow_up() {
-    local delay
-    for delay in "${REBOOST_AFTER[@]}"; do
-        sleep "$delay"
+    local i
+    for ((i = 0; i < ${#FOLLOW_UP[@]}; i += 2)); do
+        sleep "${FOLLOW_UP[i]}"
         [ -f "$FLAG" ] || return
-        boost_tree "$@"
+        case ${FOLLOW_UP[i + 1]} in
+            boost) boost_tree "$@" ;;
+            render) tree_pids "$@"; boost_render_thread "${TREE[@]}" ;;
+        esac
     done
 }
 
