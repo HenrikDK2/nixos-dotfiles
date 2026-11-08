@@ -74,6 +74,9 @@ readonly EXCLUDED_PATTERNS=(
     # name, so a game whose arguments contain e.g. "find " still matches, and
     # a Steam game whose launch target is a .sh script is not excluded.
     "(^|/)(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
+    # The same tools behind a wrapper that forks them (sudo find …, timeout
+    # 60 rsync …): the wrapper process itself would be tracked otherwise.
+    "^([^ ]*/)?(sudo|doas|run0|timeout|time)( -[ugCDhpr] [^ ]+| -[^ ]+| [0-9.]+[smhd]?)* ([^ ]*/)?(yay|pacman|pgrep|find|xargs|grep|awk|rsync|tar|cat)[[:space:]]"
     "^[^ ]*\.sh( |$)"
     "^([^ ]*/)?(ba|da)?sh( -[^ ]+)* [^ ]*\.sh( |$)"
 )
