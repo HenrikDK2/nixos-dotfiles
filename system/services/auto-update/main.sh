@@ -9,6 +9,25 @@ readonly git_cmd=(git -C "$flake"
   -c user.email="autoupgrade@localhost"
   -c safe.directory="$flake")
 
+# schedule_check EPOCH: one more check at that time (nixos-upgrade-due.timer).
+# A wall-clock timer, so time spent asleep counts and a check that came due
+# during sleep runs right after resume.
+schedule_check() {
+  systemctl stop nixos-upgrade-due.timer 2>/dev/null
+  systemd-run --quiet --collect --unit=nixos-upgrade-due \
+    --on-calendar="$(date -d "@$1" '+%F %T')" \
+    --timer-property=AccuracySec=1min \
+    --timer-property=RemainAfterElapse=no \
+    "$(command -v systemctl)" start --no-block nixos-upgrade.service ||
+    echo "Could not schedule the next check; it runs at the next boot."
+}
+
+# After a successful upgrade (ExecStartPost): next check when it is due.
+if [[ ${1:-} == schedule-next ]]; then
+  schedule_check $((EPOCHSECONDS + gate_min_age))
+  exit 0
+fi
+
 # Exit codes (ExecCondition): 0 = upgrade now, 1 = skip quietly,
 # 255 = failed, so nixos-upgrade.service is retried (Restart=on-failure).
 
@@ -30,15 +49,8 @@ if read -r gate_created _ 2>/dev/null < "$gate_stamp"; then
     else
       gate_ago="$((gate_age / 3600))h ago"
     fi
-    # Check again the moment it is due, not a whole timer period later.
     gate_left=$((gate_min_age - gate_age))
-    systemctl stop nixos-upgrade-due.timer 2>/dev/null
-    systemd-run --quiet --collect --unit=nixos-upgrade-due \
-      --on-active="${gate_left}s" \
-      --timer-property=AccuracySec=1min \
-      --timer-property=RemainAfterElapse=no \
-      "$(command -v systemctl)" start --no-block nixos-upgrade.service ||
-      echo "Could not schedule the next check; the 24 h timer will do it."
+    schedule_check $((gate_created + gate_min_age))
     echo "Last upgrade was $gate_ago (< $((gate_min_age / 3600))h); skipping," \
       "next check in $((gate_left / 3600))h $((gate_left % 3600 / 60))min."
     exit 1

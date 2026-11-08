@@ -12,7 +12,7 @@ let
   upgradeGate = pkgs.writeShellApplication {
     name = "nixos-upgrade-gate";
     bashOptions = [ ];
-    runtimeInputs = [ pkgs.nix pkgs.git pkgs.systemd ];
+    runtimeInputs = [ pkgs.coreutils pkgs.nix pkgs.git pkgs.systemd ];
     text = builtins.replaceStrings
       [ "@flakeDir@" ]
       [ flakeDir ]
@@ -39,9 +39,10 @@ in
   # PC was off, and after that only when an upgrade is due again: main.sh
   # lets one through 24 h after the last successful upgrade.
   # - 10 min after boot, after the login rush (Steam, Discord, Thunderbird).
-  # - When that check finds the last upgrade too recent, main.sh schedules
-  #   the next check for the moment it becomes due (nixos-upgrade-due.timer).
-  # - 24 h after the previous run ended, for long uptimes.
+  # - When it becomes due: after an upgrade, or when a check finds the last
+  #   one too recent, main.sh schedules one check for that moment
+  #   (nixos-upgrade-due.timer, wall clock, so a PC that sleeps instead of
+  #   shutting down still checks once a day).
   # - A failed upgrade (or a failed `nix flake update`, e.g. no network yet)
   #   is retried an hour later until it succeeds (Restart= below).
   # - A run skipped because a game was running is started again by GameBoost
@@ -49,10 +50,7 @@ in
   systemd.services.nixos-upgrade.startAt = lib.mkForce [ ];
   systemd.timers.nixos-upgrade = {
     wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnBootSec = "10min";
-      OnUnitInactiveSec = "24h";
-    };
+    timerConfig.OnBootSec = "10min";
   };
 
   systemd.services.nixos-upgrade = {
@@ -79,6 +77,7 @@ in
     postStart = ''
       printf '%(%s)T\n' -1 > ${stamp}.tmp
       mv ${stamp}.tmp ${stamp}
+      ${lib.getExe upgradeGate} schedule-next
     '';
   };
 }
