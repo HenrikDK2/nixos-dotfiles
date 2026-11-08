@@ -3,6 +3,9 @@
     nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
     nixos-x86-64-v3-repo.url = "github:HenrikDK2/nixos-x86-64-v3-repo";
 
+    # Pin zed-editor until it comes available in cache.
+    nixpkgs-zed.url = "github:NixOS/nixpkgs/5e7788fd2ced82eb31da7f5329b55e49dc1587c8";
+
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
