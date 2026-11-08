@@ -1,4 +1,5 @@
 readonly gate_flag=/run/gameboost/running.flag \
+         gate_deferred=/run/nixos-upgrade.deferred \
          gate_stamp=/var/lib/generation-stamp \
          gate_min_age=86400 \
          flake="@flakeDir@"
@@ -8,11 +9,17 @@ readonly git_cmd=(git -C "$flake"
   -c user.email="autoupgrade@localhost"
   -c safe.directory="$flake")
 
+# Exit codes (ExecCondition): 0 = upgrade now, 1 = skip quietly,
+# 255 = failed, so nixos-upgrade.service is retried (Restart=on-failure).
+
 # ---------- Gate 1: GameBoost running ----------
+# GameBoost's exit.sh starts the upgrade again when the game ends.
 if [[ -e $gate_flag ]]; then
-  echo "GameBoost is running; skipping."
+  : > "$gate_deferred"
+  echo "GameBoost is running; skipping until the game ends."
   exit 1
 fi
+rm -f "$gate_deferred"
 
 # ---------- Gate 2: last upgrade too recent ----------
 if read -r gate_created _ 2>/dev/null < "$gate_stamp"; then
@@ -23,15 +30,25 @@ if read -r gate_created _ 2>/dev/null < "$gate_stamp"; then
     else
       gate_ago="$((gate_age / 3600))h ago"
     fi
-    echo "Last upgrade was $gate_ago (< $((gate_min_age / 3600))h); skipping."
+    # Check again the moment it is due, not a whole timer period later.
+    gate_left=$((gate_min_age - gate_age))
+    systemctl stop nixos-upgrade-due.timer 2>/dev/null
+    systemd-run --quiet --collect --unit=nixos-upgrade-due \
+      --on-active="${gate_left}s" \
+      --timer-property=AccuracySec=1min \
+      --timer-property=RemainAfterElapse=no \
+      "$(command -v systemctl)" start --no-block nixos-upgrade.service ||
+      echo "Could not schedule the next check; the 24 h timer will do it."
+    echo "Last upgrade was $gate_ago (< $((gate_min_age / 3600))h); skipping," \
+      "next check in $((gate_left / 3600))h $((gate_left % 3600 / 60))min."
     exit 1
   fi
 fi
 
 # ---------- Update flake (only reached when an upgrade is due) ----------
 if ! nix flake update --flake "$flake"; then
-  echo "flake update failed; skipping."
-  exit 1
+  echo "flake update failed; retrying in an hour."
+  exit 255
 fi
 
 # ---------- Commit updated flake.lock ----------

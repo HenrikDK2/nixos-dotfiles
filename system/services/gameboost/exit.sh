@@ -136,6 +136,15 @@ restore_pcie_power_management() {
     echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null
 }
 
+# An auto-upgrade that came due while the game ran (auto-update/main.sh
+# skipped it and left this marker) starts now. gameboostd removes
+# running.flag before running this script, so the upgrade gate lets it through.
+resume_deferred_upgrade() {
+    [ -e /run/nixos-upgrade.deferred ] || return 0
+    rm -f /run/nixos-upgrade.deferred
+    systemctl start --no-block nixos-upgrade.service 2>/dev/null
+}
+
 main() {
     load_state
 
@@ -150,6 +159,8 @@ main() {
     kill_lingering_processes
 
     rm -f "$STATE"
+
+    resume_deferred_upgrade
 }
 
 main "$@"
