@@ -206,7 +206,7 @@ tree_pids() {
         rest=${line#"$head") }   # after it; the whole line if none
         ppid=${rest#* }          # "STATE PPID ..."
         ppid=${ppid%% *}
-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
+        [[ $ppid == +([0-9]) ]] || continue   # gone while reading (a glob: =~ compiles its regex every time)
         pid=${stat#/proc/}
         kids[$ppid]+=" ${pid%/stat}"
     done 2>/dev/null
