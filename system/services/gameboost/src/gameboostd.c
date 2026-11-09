@@ -92,6 +92,8 @@ struct alt {
   const char *lit; /* literal every match contains, or NULL */
   size_t litn;
   size_t anc; /* index in lit of its least common byte (memchr anchor) */
+  char *seq;  /* or: pat is a plain sequence, matched without a regex */
+  size_t seqn, seqanc;
   int compiled;
   regex_t re;
 };
@@ -239,14 +241,16 @@ static size_t pick_anchor(const char *lit, size_t n) {
 }
 
 /* memmem(s, n, a->lit, a->litn) != NULL, found by memchr() on the anchor
- * byte: few candidate positions, each confirmed with memcmp(). */
+ * byte: few candidate positions, each confirmed with memcmp() once one more
+ * byte (first or last) matches inline, which rules out most of them. */
 static int has_lit(const char *s, size_t n, const struct alt *a) {
-  size_t k = a->anc, ln = a->litn;
+  size_t k = a->anc, ln = a->litn, j = k ? 0 : ln - 1;
   if (n < ln)
     return 0;
   const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
   while (p <= last && (p = memchr(p, a->lit[k], (size_t)(last - p) + 1))) {
-    if (!memcmp(p - k, a->lit, ln))
+    const char *c = p - k; /* candidate start */
+    if (c[j] == a->lit[j] && !memcmp(c, a->lit, ln))
       return 1;
     ++p;
   }
@@ -255,6 +259,45 @@ static int has_lit(const char *s, size_t n, const struct alt *a) {
 
 /* "wine" in a command line; 'w' is its least common byte. */
 static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
+
+/* Patterns that are only literal bytes and [/\] (what main.sh makes of a
+ * plain path fragment) are matched directly: besides regexec() time, this
+ * saves the regex's lazily built DFA, ~2 KB per state and one state per
+ * byte here, kept for the daemon's lifetime. seq holds the bytes, 0 for
+ * [/\] (a cmdline has no NULs). Returns 0 if re is anything else. */
+static int split_seq(const char *re, char *seq, size_t *seqn) {
+  size_t n = 0;
+  for (const char *p = re; *p; ++p) {
+    if (*p == '\\' && p[1] && strchr(".\\/-+*?[](){}|^$ :_,=@#%&!~\";", p[1]))
+      seq[n++] = *++p;
+    else if (!strncmp(p, "[/\\]", 4) || !strncmp(p, "[\\/]", 4))
+      seq[n++] = 0, p += 3;
+    else if (strchr("\\.[]()*+?{}|^$", *p))
+      return 0;
+    else
+      seq[n++] = *p;
+  }
+  *seqn = n;
+  return 1;
+}
+
+static int has_seq(const char *s, size_t n, const struct alt *a) {
+  size_t k = a->seqanc, ln = a->seqn;
+  if (n < ln)
+    return 0;
+  const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
+  while (p <= last && (p = memchr(p, a->seq[k], (size_t)(last - p) + 1))) {
+    const char *c = p - k; /* candidate start */
+    size_t i = 0;
+    for (; i < ln; ++i)
+      if (a->seq[i] ? c[i] != a->seq[i] : c[i] != '/' && c[i] != '\\')
+        break;
+    if (i == ln)
+      return 1;
+    ++p;
+  }
+  return 0;
+}
 
 static void *xalloc(void *p) {
   if (!p) {
@@ -303,6 +346,14 @@ static int split_alts(const char *re, struct altset *set) {
         a->lit = NULL;
       } else {
         a->anc = pick_anchor(a->lit, a->litn);
+        char *seq = xalloc(malloc(len + 1));
+        if (split_seq(a->pat, seq, &a->seqn)) {
+          a->seq = seq; /* anchor: the literal's, located in seq */
+          a->seqanc = (size_t)((char *)memmem(seq, a->seqn, a->lit, a->litn) -
+                               seq) + a->anc;
+        } else {
+          free(seq);
+        }
       }
       if (!*p)
         break;
@@ -324,8 +375,10 @@ static int compile_alt(struct alt *a) {
 static int set_matches(struct altset *set, const char *s, size_t n) {
   for (int i = 0; i < set->n; ++i) {
     struct alt *a = &set->v[i];
-    if (a->lit && !has_lit(s, n, a))
+    if (a->seq ? !has_seq(s, n, a) : a->lit && !has_lit(s, n, a))
       continue;
+    if (a->seq)
+      return 1;
     if (compile_alt(a))
       _exit(2); /* validated at startup; cannot happen */
     if (!regexec(&a->re, s, 0, NULL, 0))
@@ -543,6 +596,8 @@ static int cn_open(void) {
 static const char *script_dir, *flag_file = "/run/gameboost/running.flag";
 static int sock = -1, sigfd = -1, pidfd = -1;
 static pid_t current, start_pid;
+/* A child may be running or unreaped (at start: any inherited across exec). */
+static int children = 1;
 static int game_mode, need_scan;
 
 static struct {
@@ -622,6 +677,8 @@ static pid_t spawn(char *const argv[]) {
     execv(argv[0], argv);
     _exit(127);
   }
+  if (pid > 0)
+    children = 1;
   return pid;
 }
 
@@ -632,11 +689,16 @@ static void run_script(const char *name, const char *arg) {
   spawn(argv);
 }
 
+/* Called on every wakeup: skip the waitpid() once none are left. */
 static void reap(void) {
   pid_t p;
+  if (!children)
+    return;
   while ((p = waitpid(-1, NULL, WNOHANG)) > 0)
     if (p == start_pid)
       start_pid = 0;
+  if (p < 0 && errno == ECHILD)
+    children = 0;
 }
 
 static void track(pid_t pid) {
@@ -716,9 +778,6 @@ static void leave_game_mode(void) {
   current = 0;
 }
 
-/* No duplicate check: a PID that exec'd twice in a second just gets checked
- * twice (one cheap kill(0) each), which is cheaper than a linear search per
- * event under exec bursts. */
 static void queue_check(pid_t pid, int64_t due, int64_t deadline) {
   if (npending == MAX_PENDING) {
     overflowed = 1; /* storm mode takes over */
@@ -731,9 +790,16 @@ static void queue_check(pid_t pid, int64_t due, int64_t deadline) {
   ++npending;
 }
 
+/* A process that execs again right away (Nix wrapper -> wrapped program,
+ * env -> interpreter) would be checked twice at the same moment: skip it
+ * when it repeats the last queued check. No search further back, which would
+ * cost more per event under exec bursts than the checks it saves. */
 static void add_pending(pid_t pid, int64_t due) {
   ++stat_events;
   ++win_events;
+  if (npending && pending[npending - 1].pid == pid &&
+      pending[npending - 1].due == due && !pending[npending - 1].deadline)
+    return;
   queue_check(pid, due, 0);
 }
 
