@@ -1,0 +1,84 @@
+--- a/system/services/gameboost/gameboostd.c
++++ b/system/services/gameboost/gameboostd.c
+@@ -92,6 +92,8 @@
+   const char *lit; /* literal every match contains, or NULL */
+   size_t litn;
+   size_t anc; /* index in lit of its least common byte (memchr anchor) */
++  char *seq;  /* or: pat is a plain sequence, matched without a regex */
++  size_t seqn, seqanc;
+   int compiled;
+   regex_t re;
+ };
+@@ -256,6 +258,45 @@
+ /* "wine" in a command line; 'w' is its least common byte. */
+ static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
+ 
++/* Patterns that are only literal bytes and [/\] (what main.sh makes of a
++ * plain path fragment) are matched directly: besides regexec() time, this
++ * saves the regex's lazily built DFA, ~2 KB per state and one state per
++ * byte here, kept for the daemon's lifetime. seq holds the bytes, 0 for
++ * [/\] (a cmdline has no NULs). Returns 0 if re is anything else. */
++static int split_seq(const char *re, char *seq, size_t *seqn) {
++  size_t n = 0;
++  for (const char *p = re; *p; ++p) {
++    if (*p == '\\' && p[1] && strchr(".\\/-+*?[](){}|^$ :_,=@#%&!~\";", p[1]))
++      seq[n++] = *++p;
++    else if (!strncmp(p, "[/\\]", 4) || !strncmp(p, "[\\/]", 4))
++      seq[n++] = 0, p += 3;
++    else if (strchr("\\.[]()*+?{}|^$", *p))
++      return 0;
++    else
++      seq[n++] = *p;
++  }
++  *seqn = n;
++  return 1;
++}
++
++static int has_seq(const char *s, size_t n, const struct alt *a) {
++  size_t k = a->seqanc, ln = a->seqn;
++  if (n < ln)
++    return 0;
++  const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
++  while (p <= last && (p = memchr(p, a->seq[k], (size_t)(last - p) + 1))) {
++    const char *c = p - k; /* candidate start */
++    size_t i = 0;
++    for (; i < ln; ++i)
++      if (a->seq[i] ? c[i] != a->seq[i] : c[i] != '/' && c[i] != '\\')
++        break;
++    if (i == ln)
++      return 1;
++    ++p;
++  }
++  return 0;
++}
++
+ static void *xalloc(void *p) {
+   if (!p) {
+     (void)!write(2, "gameboostd: out of memory\n", 26);
+@@ -303,6 +344,14 @@
+         a->lit = NULL;
+       } else {
+         a->anc = pick_anchor(a->lit, a->litn);
++        char *seq = xalloc(malloc(len + 1));
++        if (split_seq(a->pat, seq, &a->seqn)) {
++          a->seq = seq; /* anchor: the literal's, located in seq */
++          a->seqanc = (size_t)((char *)memmem(seq, a->seqn, a->lit, a->litn) -
++                               seq) + a->anc;
++        } else {
++          free(seq);
++        }
+       }
+       if (!*p)
+         break;
+@@ -324,8 +373,10 @@
+ static int set_matches(struct altset *set, const char *s, size_t n) {
+   for (int i = 0; i < set->n; ++i) {
+     struct alt *a = &set->v[i];
+-    if (a->lit && !has_lit(s, n, a))
++    if (a->seq ? !has_seq(s, n, a) : a->lit && !has_lit(s, n, a))
+       continue;
++    if (a->seq)
++      return 1;
+     if (compile_alt(a))
+       _exit(2); /* validated at startup; cannot happen */
+     if (!regexec(&a->re, s, 0, NULL, 0))

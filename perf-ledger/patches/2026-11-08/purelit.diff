@@ -1,0 +1,29 @@
+--- a/system/services/gameboost/gameboostd.c
++++ b/system/services/gameboost/gameboostd.c
+@@ -92,6 +92,7 @@
+   const char *lit; /* literal every match contains, or NULL */
+   size_t litn;
+   size_t anc; /* index in lit of its least common byte (memchr anchor) */
++  int exact;  /* pat is just lit: has_lit() alone decides, no regex */
+   int compiled;
+   regex_t re;
+ };
+@@ -303,6 +304,9 @@
+         a->lit = NULL;
+       } else {
+         a->anc = pick_anchor(a->lit, a->litn);
++        /* No ERE operator at all. Besides regexec() time, this saves the
++         * regex's lazily built DFA: ~2 KB per state, one per byte here. */
++        a->exact = a->pat[strcspn(a->pat, "\\.[]()*+?{}|^$")] == '\0';
+       }
+       if (!*p)
+         break;
+@@ -326,6 +330,8 @@
+     struct alt *a = &set->v[i];
+     if (a->lit && !has_lit(s, n, a))
+       continue;
++    if (a->exact)
++      return 1;
+     if (compile_alt(a))
+       _exit(2); /* validated at startup; cannot happen */
+     if (!regexec(&a->re, s, 0, NULL, 0))

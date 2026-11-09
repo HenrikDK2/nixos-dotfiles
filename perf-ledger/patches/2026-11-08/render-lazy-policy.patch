@@ -1,0 +1,24 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 19:10:56.058478123 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 19:10:56.059800109 +0000
+@@ -336,6 +336,12 @@
+         case $name in
+             wineserver | dxvk-shader* | dxvk-submit | dxvk-queue | dxvk-frame | vkd3d* | *Worker* | *worker* | TaskGraph* | *Pool*) continue ;;
+         esac
++        d=$((run - t0[$t]))
++        # Only a thread that would be picked so far needs the policy check.
++        case $name in
++            RenderThread* | RHIThread | UnityGfxDevice*) ((d > pref_d || d > best_d)) ;;
++            *) ((d > best_d)) ;;
++        esac || continue
+         # Policy is field 41 of stat; comm may contain spaces, so count
+         # from the last ')' (field 3 onward). Split with set -f (no
+         # globbing); bash would read a here-string one byte per syscall.
+@@ -349,7 +355,6 @@
+         policy=${f[38]}
+         [[ $policy == 0 ]] || continue
+ 
+-        d=$((run - t0[$t]))
+         case $name in
+             RenderThread* | RHIThread | UnityGfxDevice*)
+                 ((d > pref_d)) && { pref=$t pref_name=$name pref_d=$d; } ;;

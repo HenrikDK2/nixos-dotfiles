@@ -1,0 +1,44 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -443,24 +443,36 @@
+     const { entries } = snapshot;
+     const occupancy = new Map(entries.map(entry => [entry.tile, new Set()]));
+     const context = windowContext(selfWindow);
++    // Whether a tile's window is unminimized and shares the context, so the
++    // window list below does not read those properties again.
++    const visible = new Map();
+ 
+     // Explicit tile occupants may not be discoverable by geometry matching.
+     for (const entry of entries) {
+         const occupants = occupancy.get(entry.tile);
+ 
+         for (const window of entry.tile.windows) {
+-            if (window !== selfWindow && !window.minimized &&
+-                sharesContext(context, window)) {
+-                occupants.add(window);
++            if (window === selfWindow) continue;
++
++            let shown = visible.get(window);
++            if (shown === undefined) {
++                shown = !window.minimized && sharesContext(context, window);
++                visible.set(window, shown);
+             }
++
++            if (shown) occupants.add(window);
+         }
+     }
+ 
+     const windows = workspace.windowList();
+ 
+     for (const window of windows) {
+-        if (window === selfWindow || !window.normalWindow || window.minimized ||
+-            window.dialog || window.transient || !sharesContext(context, window)) {
++        const shown = visible.get(window);
++
++        if (window === selfWindow || !window.normalWindow ||
++            (shown === undefined ? window.minimized : !shown) ||
++            window.dialog || window.transient ||
++            (shown === undefined && !sharesContext(context, window))) {
+             continue;
+         }
+ 

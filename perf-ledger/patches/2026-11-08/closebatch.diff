@@ -1,0 +1,117 @@
+--- a/system/services/gameboost/gameboostd.c
++++ b/system/services/gameboost/gameboostd.c
+@@ -341,6 +341,39 @@
+ static int procfd = -1;
+ static pid_t self;
+ 
++/* Close fds in batches with one close_range() (Linux 5.9+) per run of
++ * contiguous fds. They are contiguous: openat() returns the lowest free fd
++ * and nothing else opens files during a scan or a round of checks; a gap
++ * just starts a new batch. */
++static int close_lo, close_n, use_close_range = 1;
++
++static void flush_closes(void) {
++  if (!close_n)
++    return;
++  if (!use_close_range ||
++      syscall(SYS_close_range, close_lo, close_lo + close_n - 1, 0)) {
++    use_close_range = 0; /* ENOSYS / seccomp: plain close from now on */
++    for (int i = close_lo; i < close_lo + close_n; ++i)
++      close(i);
++  }
++  close_n = 0;
++}
++
++static void defer_close(int fd) {
++  if (fd < 0)
++    return;
++  if (!use_close_range) {
++    close(fd);
++    return;
++  }
++  if (close_n && fd != close_lo + close_n) /* gap: flush, start anew */
++    flush_closes();
++  if (!close_n)
++    close_lo = fd;
++  if (++close_n >= CLOSE_BATCH)
++    flush_closes();
++}
++
+ /* Read /proc/PID/cmdline into buf as one line: NULs/newlines become spaces,
+  * surrounding blanks trimmed (like `read -r pid cmdline`). Returns length or
+  * -1 if the process is gone. *fdp receives the open fd (caller closes). */
+@@ -396,25 +429,10 @@
+   if (pid < 0)
+     *--q = '-';
+   ssize_t n = read_cmdline_fd(q, buf, out, &fd);
+-  if (fd >= 0)
+-    close(fd);
++  defer_close(fd); /* caller calls flush_closes() */
+   return n;
+ }
+ 
+-/* Close fds lo..lo+*pending-1 with one close_range() (Linux 5.9+). The fds
+- * are contiguous: openat() returns the lowest free fd and nothing else opens
+- * files during a scan; a gap just starts a new batch. */
+-static void flush_closes(int lo, int *pending, int *use_close_range) {
+-  if (!*pending)
+-    return;
+-  if (!*use_close_range || syscall(SYS_close_range, lo, lo + *pending - 1, 0)) {
+-    *use_close_range = 0; /* ENOSYS / seccomp: plain close from now on */
+-    for (int i = lo; i < lo + *pending; ++i)
+-      close(i);
+-  }
+-  *pending = 0;
+-}
+-
+ struct found {
+   pid_t pid[MAX_FOUND];
+   int n;
+@@ -429,8 +447,6 @@
+ static void full_scan(struct found *f, int print) {
+   static char dirbuf[32 * 1024];
+   static char buf[CMD_MAX];
+-  int lo = -1, pending = 0;
+-  int use_close_range = 1;
+ 
+   f->n = 0;
+   ++stat_scans;
+@@ -465,20 +481,7 @@
+       char *cmd;
+       int fd;
+       ssize_t n = read_cmdline_fd(s, buf, &cmd, &fd);
+-
+-      /* Batch closes into one close_range() while fds stay contiguous. */
+-      if (fd >= 0) {
+-        if (!use_close_range) {
+-          close(fd);
+-        } else {
+-          if (pending && fd != lo + pending) /* gap: flush, start anew */
+-            flush_closes(lo, &pending, &use_close_range);
+-          if (!pending)
+-            lo = fd;
+-          if (++pending >= CLOSE_BATCH)
+-            flush_closes(lo, &pending, &use_close_range);
+-        }
+-      }
++      defer_close(fd);
+ 
+       if (n <= 0 || !is_game(cmd, (size_t)n))
+         continue;
+@@ -492,7 +495,7 @@
+     }
+   }
+ 
+-  flush_closes(lo, &pending, &use_close_range);
++  flush_closes();
+ }
+ 
+ /* ------------------------------------------------------------------------- */
+@@ -908,6 +911,7 @@
+     else
+       pending[i] = pending[--npending];
+   }
++  flush_closes();
+   return hit;
+ }
+ 

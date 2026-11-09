@@ -1,0 +1,12 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 18:53:48.494944060 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 18:53:48.496598993 +0000
+@@ -206,7 +206,7 @@
+         rest=${line#"$head") }   # after it; the whole line if none
+         ppid=${rest#* }          # "STATE PPID ..."
+         ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
++        [[ $ppid == +([0-9]) ]] || continue   # gone while reading (a glob: =~ compiles its regex every time)
+         pid=${stat#/proc/}
+         kids[$ppid]+=" ${pid%/stat}"
+     done 2>/dev/null

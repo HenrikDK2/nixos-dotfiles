@@ -1,0 +1,219 @@
+diff -ru a/system/services/gameboost/exit.sh b/system/services/gameboost/exit.sh
+--- a/system/services/gameboost/exit.sh	2026-11-08 19:10:56.139894661 +0000
++++ b/system/services/gameboost/exit.sh	2026-11-08 19:10:56.142797455 +0000
+@@ -19,13 +19,16 @@
+     done < "$STATE"
+ }
+ 
+-# restore_saved REGEX: restore matching entries, newest first (GPU profile
+-# before level). Returns 1 without a state file.
++# restore_saved PATTERN: restore entries whose path matches the glob
++# PATTERN, newest first (GPU profile before level). Returns 1 without a state
++# file. A glob, not a regex: bash compiles a =~ regex again on every test,
++# which made this loop most of exit.sh's CPU time.
+ restore_saved() {
+     ((HAVE_STATE)) || return 1
+     local i
+     for ((i = ${#SAVED_FILES[@]} - 1; i >= 0; i--)); do
+-        [[ ${SAVED_FILES[i]} =~ $1 ]] &&
++        # shellcheck disable=SC2053 # $1 is a pattern
++        [[ ${SAVED_FILES[i]} == $1 ]] &&
+             echo "${SAVED_VALUES[i]}" > "${SAVED_FILES[i]}" 2>/dev/null
+     done
+     return 0
+@@ -40,7 +43,7 @@
+ 
+     systemctl stop --no-block gameboost-hold.service 2>/dev/null
+ 
+-    restore_saved 'cpufreq|intel_pstate|amd_x3d_mode|cpu\.weight' && return
++    restore_saved '@(*cpufreq*|*intel_pstate*|*amd_x3d_mode*|*cpu.weight*)' && return
+ 
+     # power-profiles-daemon owns the governor and EPP: don't fight it.
+     systemctl is-active --quiet power-profiles-daemon.service && return
+@@ -83,7 +86,7 @@
+ set_gpu_auto() {
+     local gpu class
+ 
+-    restore_saved 'pp_power_profile_mode|power_dpm_force_performance_level|^/sys/bus/pci/devices/.*/power/control$' && return
++    restore_saved '@(*pp_power_profile_mode*|*power_dpm_force_performance_level*|/sys/bus/pci/devices/*/power/control)' && return
+ 
+     # Fallback without state file: profile before level (needs "manual").
+     for gpu in /sys/bus/pci/devices/*; do
+@@ -97,18 +100,20 @@
+     done
+ }
+ 
+-# One pgrep for the three process names; the .exe count only runs while
+-# winedevice.exe does.
++# The three process names are read from /proc/PID/comm with builtins
++# (pgrep opens five files per process for the same answer); the .exe count
++# only runs while winedevice.exe does.
+ kill_lingering_processes() {
+-    local name wl=0 reaper=0 winedevice=0
++    local comm name wl=0 reaper=0 winedevice=0
+ 
+-    while read -r _ name; do
++    for comm in /proc/[0-9]*/comm; do
++        IFS= read -r name < "$comm" || continue
+         case $name in
+             gamescope-wl) wl=1 ;;
+             gamescopereaper) reaper=1 ;;
+-            *) winedevice=1 ;;
++            winedevice?exe) winedevice=1 ;;
+         esac
+-    done < <(pgrep -lx 'gamescope-wl|gamescopereaper|winedevice.exe')
++    done 2>/dev/null
+ 
+     ((!wl && reaper)) && killall -9 gamescopereaper 2>/dev/null
+ 
+@@ -119,7 +124,7 @@
+ restore_sata_power_management() {
+     local host
+ 
+-    restore_saved 'link_power_management_policy' && return
++    restore_saved '*link_power_management_policy*' && return
+ 
+     for host in /sys/class/scsi_host/host*/link_power_management_policy; do
+         echo med_power_with_dipm > "$host" 2>/dev/null
+@@ -129,7 +134,7 @@
+ restore_nvme_power_management() {
+     local nvme_dev
+ 
+-    restore_saved '^/sys/block/nvme' && return
++    restore_saved '/sys/block/nvme*' && return
+ 
+     for nvme_dev in /sys/block/nvme*/device; do
+         [ -d "$nvme_dev/power" ] || continue
+@@ -141,7 +146,7 @@
+ restore_pcie_power_management() {
+     local pci
+ 
+-    restore_saved '^/sys/bus/pci/devices/.*/power/control$|pcie_aspm' && return
++    restore_saved '@(/sys/bus/pci/devices/*/power/control|*pcie_aspm*)' && return
+ 
+     for pci in /sys/bus/pci/devices/*/power/control; do
+         echo auto > "$pci" 2>/dev/null
+@@ -150,12 +155,12 @@
+ }
+ 
+ # Start the CUPS units start.sh stopped (socket first, then the service if
+-# cupsd was running).
++# cupsd was running). The list is read first so that one rm removes it and
++# the state file.
+ start_cups() {
+     local units=()
+-    [ -f "$CUPS_STOPPED" ] || return 0
+-    mapfile -t units < "$CUPS_STOPPED"
+-    rm -f "$CUPS_STOPPED"
++    [ -f "$CUPS_STOPPED" ] && mapfile -t units < "$CUPS_STOPPED"
++    rm -f "$STATE" "$CUPS_STOPPED"
+     ((${#units[@]})) && systemctl start --no-block "${units[@]}" 2>/dev/null
+ }
+ 
+@@ -185,8 +190,6 @@
+     set_gpu_auto
+     kill_lingering_processes
+ 
+-    rm -f "$STATE"
+-
+     start_cups
+     resume_deferred_upgrade
+ }
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 19:10:56.135882480 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 19:10:56.138296938 +0000
+@@ -44,7 +44,9 @@
+             cur=${cur#*\[}
+             cur=${cur%%\]*}
+         fi
+-        save_original "$1" "$cur"
++        # save_original without its is_saved check, just done
++        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
++        SAVED[$1]=1
+     fi
+ 
+     echo "$2" > "$1" 2>/dev/null
+@@ -67,10 +69,11 @@
+ # writing the same files behind PPD's back.
+ ppd_drives_cpu() {
+     local driver status
+-    systemctl is-active --quiet power-profiles-daemon.service || return 1
++    # --auto-start=no: fails when PPD is not running instead of starting it
++    # through D-Bus activation, so no separate `systemctl is-active` check.
+     # stderr is redirected outside $(): bash runs a $() holding one command
+     # without redirections by exec, with no second fork.
+-    { driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
++    { driver=$(busctl --system --auto-start=no get-property org.freedesktop.UPower.PowerProfiles \
+         /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles \
+         CpuDriver); } 2>/dev/null || return 1
+     case $driver in
+@@ -189,32 +192,26 @@
+ # forked well after detection by a process that is not itself a match (Steam's
+ # pv-adverb/srt-bwrap, Proton's python script), and nice is only inherited at
+ # fork, so boosting just the matched PIDs can miss the game entirely.
+-# ppid map from /proc/PID/stat; comm may contain spaces, ')' or newlines, so
+-# the whole file is read and the fields are parsed after the last ') '.
+-# This loop covers every process, several times per game: it uses expansions
+-# that are linear in the line length and no here-strings (which bash reads one
+-# byte per syscall), and redirects stderr once.
++# A process's children are listed in its threads' task/TID/children files
++# (CONFIG_PROC_CHILDREN, set in nixpkgs' and CachyOS's kernel configs), so
++# only the tree's own threads are read, not the stat file of every process on
++# the system, several times per game. Threads and processes come and go:
++# stderr is redirected once.
+ tree_pids() {
+-    local stat line head rest pid ppid i
+-    local -A kids=()
++    local t kids i
+     TREE=()
+ 
+-    for stat in /proc/[0-9]*/stat; do
+-        # read returns 1 at EOF (no NUL in the file); line is still filled.
+-        read -r -d '' line < "$stat"
+-        head=${line%") "*}       # up to the last ') '
+-        rest=${line#"$head") }   # after it; the whole line if none
+-        ppid=${rest#* }          # "STATE PPID ..."
+-        ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
+-        pid=${stat#/proc/}
+-        kids[$ppid]+=" ${pid%/stat}"
+-    done 2>/dev/null
+-
+-    for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
++    for t; do [ -d "/proc/$t" ] && TREE+=("$t"); done
+     for ((i = 0; i < ${#TREE[@]}; i++)); do
+-        for pid in ${kids[${TREE[i]}]}; do TREE+=("$pid"); done
+-    done
++        for t in /proc/"${TREE[i]}"/task/*/children; do
++            # read returns 1 at EOF (no NUL in the file); kids is still
++            # filled. Reset first: a vanished file leaves it untouched.
++            kids=
++            read -r -d '' kids < "$t"
++            # shellcheck disable=SC2206 # PIDs: word splitting is the point
++            TREE+=($kids)
++        done
++    done 2>/dev/null
+ }
+ 
+ # cgroups already handled (weight set, or warned once that it can't be).
+@@ -336,6 +333,12 @@
+         case $name in
+             wineserver | dxvk-shader* | dxvk-submit | dxvk-queue | dxvk-frame | vkd3d* | *Worker* | *worker* | TaskGraph* | *Pool*) continue ;;
+         esac
++        d=$((run - t0[$t]))
++        # Only a thread that would be picked so far needs the policy check.
++        case $name in
++            RenderThread* | RHIThread | UnityGfxDevice*) ((d > pref_d || d > best_d)) ;;
++            *) ((d > best_d)) ;;
++        esac || continue
+         # Policy is field 41 of stat; comm may contain spaces, so count
+         # from the last ')' (field 3 onward). Split with set -f (no
+         # globbing); bash would read a here-string one byte per syscall.
+@@ -349,7 +352,6 @@
+         policy=${f[38]}
+         [[ $policy == 0 ]] || continue
+ 
+-        d=$((run - t0[$t]))
+         case $name in
+             RenderThread* | RHIThread | UnityGfxDevice*)
+                 ((d > pref_d)) && { pref=$t pref_name=$name pref_d=$d; } ;;

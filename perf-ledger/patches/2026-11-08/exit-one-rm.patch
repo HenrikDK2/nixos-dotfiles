@@ -1,0 +1,29 @@
+diff -ru a/system/services/gameboost/exit.sh b/system/services/gameboost/exit.sh
+--- a/system/services/gameboost/exit.sh	2026-11-08 18:53:48.739655773 +0000
++++ b/system/services/gameboost/exit.sh	2026-11-08 18:53:48.746936646 +0000
+@@ -150,12 +150,12 @@
+ }
+ 
+ # Start the CUPS units start.sh stopped (socket first, then the service if
+-# cupsd was running).
++# cupsd was running). The list is read first so that one rm removes it and
++# the state file.
+ start_cups() {
+     local units=()
+-    [ -f "$CUPS_STOPPED" ] || return 0
+-    mapfile -t units < "$CUPS_STOPPED"
+-    rm -f "$CUPS_STOPPED"
++    [ -f "$CUPS_STOPPED" ] && mapfile -t units < "$CUPS_STOPPED"
++    rm -f "$STATE" "$CUPS_STOPPED"
+     ((${#units[@]})) && systemctl start --no-block "${units[@]}" 2>/dev/null
+ }
+ 
+@@ -185,8 +185,6 @@
+     set_gpu_auto
+     kill_lingering_processes
+ 
+-    rm -f "$STATE"
+-
+     start_cups
+     resume_deferred_upgrade
+ }

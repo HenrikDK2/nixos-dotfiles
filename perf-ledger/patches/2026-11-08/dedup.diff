@@ -1,0 +1,29 @@
+--- a/system/services/gameboost/gameboostd.c
++++ b/system/services/gameboost/gameboostd.c
+@@ -716,9 +716,6 @@
+   current = 0;
+ }
+ 
+-/* No duplicate check: a PID that exec'd twice in a second just gets checked
+- * twice (one cheap kill(0) each), which is cheaper than a linear search per
+- * event under exec bursts. */
+ static void queue_check(pid_t pid, int64_t due, int64_t deadline) {
+   if (npending == MAX_PENDING) {
+     overflowed = 1; /* storm mode takes over */
+@@ -731,9 +728,16 @@
+   ++npending;
+ }
+ 
++/* A process that execs again right away (Nix wrapper -> wrapped program,
++ * env -> interpreter) would be checked twice at the same moment: skip it
++ * when it repeats the last queued check. No search further back, which would
++ * cost more per event under exec bursts than the checks it saves. */
+ static void add_pending(pid_t pid, int64_t due) {
+   ++stat_events;
+   ++win_events;
++  if (npending && pending[npending - 1].pid == pid &&
++      pending[npending - 1].due == due && !pending[npending - 1].deadline)
++    return;
+   queue_check(pid, due, 0);
+ }
+ 

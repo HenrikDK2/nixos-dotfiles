@@ -1,0 +1,14 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -476,7 +476,10 @@
+         }
+ 
+         const hasReservation = Boolean(state && !state.userUntiled);
+-        const frameGeometry = fullScreen ? null : window.frameGeometry;
++        const geometry = fullScreen ? null : window.frameGeometry;
++        const frameGeometry = geometry && {
++            x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height,
++        };
+ 
+         for (const entry of entries) {
+             const tile = entry.tile;

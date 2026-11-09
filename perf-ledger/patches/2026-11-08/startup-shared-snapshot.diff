@@ -1,0 +1,18 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -719,8 +719,12 @@
+     );
+ }
+ 
+-workspace.windowList().forEach(window => {
+-    if (window.normalWindow) track(window);
+-});
++{
++    // Existing windows on the same output and desktop share one read of their layout.
++    const snapshotCache = new Map();
++    workspace.windowList().forEach(window => {
++        if (window.normalWindow) track(window, snapshotCache);
++    });
++}
+ 
+ workspace.windowAdded.connect(placeWindow);

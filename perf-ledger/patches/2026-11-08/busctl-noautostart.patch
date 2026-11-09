@@ -1,0 +1,17 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 18:53:48.664718812 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 18:53:48.667380360 +0000
+@@ -67,10 +67,11 @@
+ # writing the same files behind PPD's back.
+ ppd_drives_cpu() {
+     local driver status
+-    systemctl is-active --quiet power-profiles-daemon.service || return 1
++    # --auto-start=no: fails when PPD is not running instead of starting it
++    # through D-Bus activation, so no separate `systemctl is-active` check.
+     # stderr is redirected outside $(): bash runs a $() holding one command
+     # without redirections by exec, with no second fork.
+-    { driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
++    { driver=$(busctl --system --auto-start=no get-property org.freedesktop.UPower.PowerProfiles \
+         /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles \
+         CpuDriver); } 2>/dev/null || return 1
+     case $driver in

@@ -1,0 +1,58 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -264,6 +264,44 @@
+     return null;
+ }
+ 
++// Whether a leaf inside `outer` could match `inner` within the tolerance.
++function couldContainMatch(outer, inner) {
++    const t = GEOM_TOLERANCE_PX;
++    return inner.x >= outer.x - t && inner.y >= outer.y - t &&
++        inner.x + inner.width <= outer.x + outer.width + 2 * t &&
++        inner.y + inner.height <= outer.y + outer.height + 2 * t;
++}
++
++// First leaf (in traversal order) matching frameGeometry, skipping subtrees whose
++// area cannot hold a matching leaf. Returns { tile, geometry } or null.
++function findLeafByGeometryPruned(root, frameGeometry) {
++    const rootChildren = root.tiles;
++    if (rootChildren.length === 0) return null;
++
++    const window = {
++        x: frameGeometry.x, y: frameGeometry.y,
++        width: frameGeometry.width, height: frameGeometry.height,
++    };
++    const stack = [];
++    for (let i = rootChildren.length - 1; i >= 0; i--) stack.push(rootChildren[i]);
++
++    while (stack.length) {
++        const current = stack.pop();
++        const geometry = current.absoluteGeometry;
++        if (!couldContainMatch(geometry, window)) continue;
++
++        const children = current.tiles;
++        if (children.length === 0) {
++            if (matchesGeometry(window, geometry)) return { tile: current, geometry };
++            continue;
++        }
++
++        for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
++    }
++
++    return null;
++}
++
+ function findTileByState(window, state, snapshotCache) {
+     const root = rootTileFor(window);
+     if (!root) return null;
+@@ -398,7 +436,9 @@
+         if (!root) return;
+ 
+         const frameGeometry = window.frameGeometry;
+-        const match = findTileByStateLazy(window, state, root, frameGeometry);
++        const match = state.tile || state.key
++            ? findTileByStateLazy(window, state, root, frameGeometry)
++            : findLeafByGeometryPruned(root, frameGeometry);
+ 
+         if (match && matchesGeometry(frameGeometry, match.geometry)) {
+             window.tile = match.tile;

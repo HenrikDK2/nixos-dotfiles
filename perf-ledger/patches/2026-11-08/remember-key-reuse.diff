@@ -1,0 +1,80 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -300,11 +300,12 @@
+ // ---------------------------------------------------------------------------
+ const trackedWindows = new Set();
+ 
+-function rememberTileState(state, tile) {
++// key: the tile's rectKey when a snapshot already holds it.
++function rememberTileState(state, tile, key) {
+     if (!state || !tile) return;
+ 
+     state.tile = tile;
+-    state.key = rectKey(tile.absoluteGeometry);
++    state.key = key || rectKey(tile.absoluteGeometry);
+     state.userUntiled = false;
+ }
+ 
+@@ -530,25 +531,27 @@
+     const order = buildOrder(cfg, entries.length);
+     const occupancy = computeOccupancies(snapshot, window, snapshotCache);
+ 
+-    let target = null;
++    let targetEntry = null;
+     let fewest = Infinity;
+ 
+     for (const index of order) {
+-        const tile = entries[index].tile;
+-        const count = occupancy.get(tile).size;
++        const entry = entries[index];
++        const count = occupancy.get(entry.tile).size;
+ 
+         if (count === 0) {
+-            target = tile;
++            targetEntry = entry;
+             break;
+         }
+ 
+         // Strict comparison preserves fill-order tie breaks.
+         if (cfg.stackExtra && count < fewest) {
+             fewest = count;
+-            target = tile;
++            targetEntry = entry;
+         }
+     }
+ 
++    const target = targetEntry && targetEntry.tile;
++
+     if (cfg.debug) {
+         const counts = entries.map(
+             (entry, i) => "T" + (i + 1) + ":" + occupancy.get(entry.tile).size
+@@ -565,7 +568,7 @@
+ 
+     if (target) {
+         window.tile = target;
+-        if (window.mt) rememberTileState(window.mt, target);
++        if (window.mt) rememberTileState(window.mt, target, targetEntry.key);
+     }
+ }
+ 
+@@ -681,8 +684,9 @@
+         context.window.tile = targetTile;
+         targetWindow.tile = context.tile;
+ 
+-        rememberTileState(context.window.mt, targetTile);
+-        rememberTileState(targetWindow.mt, context.tile);
++        const { byTile } = context.snapshot;
++        rememberTileState(context.window.mt, targetTile, byTile.get(targetTile).key);
++        rememberTileState(targetWindow.mt, context.tile, byTile.get(context.tile)?.key);
+     } else {
+         // Move into the tile only if nothing occupies or has reserved it
+         // (e.g. a fullscreen window that will return to it).
+@@ -694,7 +698,7 @@
+         if (occupants.size > 0) return;
+ 
+         context.window.tile = targetTile;
+-        rememberTileState(context.window.mt, targetTile);
++        rememberTileState(context.window.mt, targetTile, context.snapshot.byTile.get(targetTile).key);
+     }
+ 
+     workspace.activeWindow = context.window;

@@ -1,0 +1,37 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -335,8 +335,12 @@
+     }
+ }
+ 
++// Returns the window's state.
+ function track(window, snapshotCache) {
+-    if (trackedWindows.has(window) && window.mt) return;
++    if (trackedWindows.has(window)) {
++        const tracked = window.mt;
++        if (tracked) return tracked;
++    }
+     trackedWindows.add(window);
+ 
+     const state = window.mt = {
+@@ -434,6 +438,8 @@
+     } catch (e) {
+         // Keep tracking functional when the optional closed signal is unavailable.
+     }
++
++    return state;
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -464,10 +470,8 @@
+             continue;
+         }
+ 
+-        track(window, snapshotCache);
+-
++        const state = track(window, snapshotCache);
+         const fullScreen = window.fullScreen;
+-        const state = window.mt;
+         let assignedTile = window.tile;
+ 
+         if (!fullScreen && !assignedTile && state && !state.userUntiled) {

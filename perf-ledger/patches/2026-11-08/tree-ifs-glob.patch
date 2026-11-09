@@ -1,0 +1,30 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 18:53:49.063268999 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 18:53:49.066648653 +0000
+@@ -195,18 +195,19 @@
+ # that are linear in the line length and no here-strings (which bash reads one
+ # byte per syscall), and redirects stderr once.
+ tree_pids() {
+-    local stat line head rest pid ppid i
++    local stat pid ppid i
++    local -a f
+     local -A kids=()
+     TREE=()
+ 
+     for stat in /proc/[0-9]*/stat; do
+-        # read returns 1 at EOF (no NUL in the file); line is still filled.
+-        read -r -d '' line < "$stat"
+-        head=${line%") "*}       # up to the last ') '
+-        rest=${line#"$head") }   # after it; the whole line if none
+-        ppid=${rest#* }          # "STATE PPID ..."
++        # read returns 1 at EOF (no NUL in the file); f is still filled.
++        # Split at ')': the last part follows comm's closing parenthesis.
++        IFS=')' read -r -d '' -a f < "$stat"
++        ppid=${f[*]: -1}         # " STATE PPID ..."
++        ppid=${ppid#" "* }
+         ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
++        [[ $ppid == +([0-9]) ]] || continue   # gone while reading (a glob: =~ compiles its regex every time)
+         pid=${stat#/proc/}
+         kids[$ppid]+=" ${pid%/stat}"
+     done 2>/dev/null

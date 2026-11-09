@@ -1,0 +1,34 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 18:57:22.793800024 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 18:57:22.795152915 +0000
+@@ -244,7 +244,7 @@
+ }
+ 
+ set_process_priority() {
+-    local pid t cg line comm tids=() io_only=()
++    local pid t cg line comm ts=() tids=() io_only=()
+     local -A seen=()
+ 
+     for pid; do
+@@ -256,15 +256,14 @@
+         read -r comm 2>/dev/null < "/proc/$pid/comm"
+         [[ $comm == wineserver ]] && continue
+ 
+-        # Nice is per thread: include every existing thread.
++        # Nice is per thread: include every existing thread (one expansion
++        # for all of them, not a loop iteration per thread).
+         if wine_sets_nice "$pid"; then
+-            for t in /proc/"$pid"/task/*; do
+-                io_only+=("${t##*/}")
+-            done
++            ts=(/proc/"$pid"/task/*)
++            io_only+=("${ts[@]##*/}")
+         else
+-            for t in /proc/"$pid"/task/*; do
+-                tids+=("${t##*/}")
+-            done
++            ts=(/proc/"$pid"/task/*)
++            tids+=("${ts[@]##*/}")
+         fi
+ 
+         # Nice only applies within a cgroup; raise the cgroup's weight.

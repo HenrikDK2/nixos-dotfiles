@@ -1,0 +1,22 @@
+--- a/system/services/gameboost/gameboostd.c
++++ b/system/services/gameboost/gameboostd.c
+@@ -239,14 +239,16 @@
+ }
+ 
+ /* memmem(s, n, a->lit, a->litn) != NULL, found by memchr() on the anchor
+- * byte: few candidate positions, each confirmed with memcmp(). */
++ * byte: few candidate positions, each confirmed with memcmp() once one more
++ * byte (first or last) matches inline, which rules out most of them. */
+ static int has_lit(const char *s, size_t n, const struct alt *a) {
+-  size_t k = a->anc, ln = a->litn;
++  size_t k = a->anc, ln = a->litn, j = k ? 0 : ln - 1;
+   if (n < ln)
+     return 0;
+   const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
+   while (p <= last && (p = memchr(p, a->lit[k], (size_t)(last - p) + 1))) {
+-    if (!memcmp(p - k, a->lit, ln))
++    const char *c = p - k; /* candidate start */
++    if (c[j] == a->lit[j] && !memcmp(c, a->lit, ln))
+       return 1;
+     ++p;
+   }

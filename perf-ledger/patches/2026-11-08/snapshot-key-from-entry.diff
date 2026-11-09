@@ -1,0 +1,24 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -161,16 +161,18 @@
+ function createTileSnapshot(root, sortByGeometry) {
+     const entries = collectLeaves(root).map((tile, traversalIndex) => {
+         const geometry = tile.absoluteGeometry;
+-
+-        return {
++        const entry = {
+             tile,
+             x: geometry.x,
+             y: geometry.y,
+             width: geometry.width,
+             height: geometry.height,
+-            key: rectKey(geometry),
++            key: null,
+             traversalIndex,
+         };
++
++        entry.key = rectKey(entry);
++        return entry;
+     });
+ 
+     if (sortByGeometry) {

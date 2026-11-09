@@ -1,0 +1,30 @@
+diff -ru a/system/services/gameboost/exit.sh b/system/services/gameboost/exit.sh
+--- a/system/services/gameboost/exit.sh	2026-11-08 19:03:01.685431795 +0000
++++ b/system/services/gameboost/exit.sh	2026-11-08 19:03:01.686804240 +0000
+@@ -97,18 +97,20 @@
+     done
+ }
+ 
+-# One pgrep for the three process names; the .exe count only runs while
+-# winedevice.exe does.
++# The three process names are read from /proc/PID/comm with builtins
++# (pgrep opens five files per process for the same answer); the .exe count
++# only runs while winedevice.exe does.
+ kill_lingering_processes() {
+-    local name wl=0 reaper=0 winedevice=0
++    local comm name wl=0 reaper=0 winedevice=0
+ 
+-    while read -r _ name; do
++    for comm in /proc/[0-9]*/comm; do
++        IFS= read -r name < "$comm" || continue
+         case $name in
+             gamescope-wl) wl=1 ;;
+             gamescopereaper) reaper=1 ;;
+-            *) winedevice=1 ;;
++            winedevice?exe) winedevice=1 ;;
+         esac
+-    done < <(pgrep -lx 'gamescope-wl|gamescopereaper|winedevice.exe')
++    done 2>/dev/null
+ 
+     ((!wl && reaper)) && killall -9 gamescopereaper 2>/dev/null
+ 

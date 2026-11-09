@@ -1,0 +1,15 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -389,8 +389,10 @@
+     });
+ 
+     window.frameGeometryChanged.connect(() => {
+-        if (window.fullScreen || window.minimized || window.move || window.resize ||
+-            window.tile || state.userUntiled) {
++        // Most common exits first: a dragged window is user-untiled and a tiled
++        // window has a tile, so their geometry storms stop at the first check.
++        if (state.userUntiled || window.tile || window.fullScreen ||
++            window.move || window.resize || window.minimized) {
+             return;
+         }
+ 

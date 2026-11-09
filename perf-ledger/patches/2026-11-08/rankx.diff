@@ -1,0 +1,15 @@
+--- a/system/services/gameboost/gameboostd.c
++++ b/system/services/gameboost/gameboostd.c
+@@ -216,9 +216,10 @@
+ 
+ /* How common byte c is in command lines (lower = rarer). Nix store hashes
+  * use digits and most lowercase letters, but never e, o, t or u; capitals
+- * and punctuation other than path/option separators are rare. */
++ * and punctuation other than path/option separators are rare. x is common
++ * too: every store path starts with /nix/. */
+ static int byte_rank(unsigned char c) {
+-  static const char lower[] = "zqjxkvbgpwyfmculdhrsnioate"; /* rarest first */
++  static const char lower[] = "zqjkvbgpwyfmculdhxrsnioate"; /* rarest first */
+   if (c >= 'A' && c <= 'Z')
+     return 1;
+   if (c >= '0' && c <= '9')

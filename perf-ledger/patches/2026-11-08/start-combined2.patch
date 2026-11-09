@@ -1,0 +1,98 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 19:10:56.095284431 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 19:10:56.096813900 +0000
+@@ -44,7 +44,9 @@
+             cur=${cur#*\[}
+             cur=${cur%%\]*}
+         fi
+-        save_original "$1" "$cur"
++        # save_original without its is_saved check, just done
++        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
++        SAVED[$1]=1
+     fi
+ 
+     echo "$2" > "$1" 2>/dev/null
+@@ -67,10 +69,11 @@
+ # writing the same files behind PPD's back.
+ ppd_drives_cpu() {
+     local driver status
+-    systemctl is-active --quiet power-profiles-daemon.service || return 1
++    # --auto-start=no: fails when PPD is not running instead of starting it
++    # through D-Bus activation, so no separate `systemctl is-active` check.
+     # stderr is redirected outside $(): bash runs a $() holding one command
+     # without redirections by exec, with no second fork.
+-    { driver=$(busctl --system get-property org.freedesktop.UPower.PowerProfiles \
++    { driver=$(busctl --system --auto-start=no get-property org.freedesktop.UPower.PowerProfiles \
+         /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles \
+         CpuDriver); } 2>/dev/null || return 1
+     case $driver in
+@@ -189,32 +192,26 @@
+ # forked well after detection by a process that is not itself a match (Steam's
+ # pv-adverb/srt-bwrap, Proton's python script), and nice is only inherited at
+ # fork, so boosting just the matched PIDs can miss the game entirely.
+-# ppid map from /proc/PID/stat; comm may contain spaces, ')' or newlines, so
+-# the whole file is read and the fields are parsed after the last ') '.
+-# This loop covers every process, several times per game: it uses expansions
+-# that are linear in the line length and no here-strings (which bash reads one
+-# byte per syscall), and redirects stderr once.
++# A process's children are listed in its threads' task/TID/children files
++# (CONFIG_PROC_CHILDREN, set in nixpkgs' and CachyOS's kernel configs), so
++# only the tree's own threads are read, not the stat file of every process on
++# the system, several times per game. Threads and processes come and go:
++# stderr is redirected once.
+ tree_pids() {
+-    local stat line head rest pid ppid i
+-    local -A kids=()
++    local t kids i
+     TREE=()
+ 
+-    for stat in /proc/[0-9]*/stat; do
+-        # read returns 1 at EOF (no NUL in the file); line is still filled.
+-        read -r -d '' line < "$stat"
+-        head=${line%") "*}       # up to the last ') '
+-        rest=${line#"$head") }   # after it; the whole line if none
+-        ppid=${rest#* }          # "STATE PPID ..."
+-        ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
+-        pid=${stat#/proc/}
+-        kids[$ppid]+=" ${pid%/stat}"
+-    done 2>/dev/null
+-
+-    for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
++    for t; do [ -d "/proc/$t" ] && TREE+=("$t"); done
+     for ((i = 0; i < ${#TREE[@]}; i++)); do
+-        for pid in ${kids[${TREE[i]}]}; do TREE+=("$pid"); done
+-    done
++        for t in /proc/"${TREE[i]}"/task/*/children; do
++            # read returns 1 at EOF (no NUL in the file); kids is still
++            # filled. Reset first: a vanished file leaves it untouched.
++            kids=
++            read -r -d '' kids < "$t"
++            # shellcheck disable=SC2206 # PIDs: word splitting is the point
++            TREE+=($kids)
++        done
++    done 2>/dev/null
+ }
+ 
+ # cgroups already handled (weight set, or warned once that it can't be).
+@@ -336,6 +333,12 @@
+         case $name in
+             wineserver | dxvk-shader* | dxvk-submit | dxvk-queue | dxvk-frame | vkd3d* | *Worker* | *worker* | TaskGraph* | *Pool*) continue ;;
+         esac
++        d=$((run - t0[$t]))
++        # Only a thread that would be picked so far needs the policy check.
++        case $name in
++            RenderThread* | RHIThread | UnityGfxDevice*) ((d > pref_d || d > best_d)) ;;
++            *) ((d > best_d)) ;;
++        esac || continue
+         # Policy is field 41 of stat; comm may contain spaces, so count
+         # from the last ')' (field 3 onward). Split with set -f (no
+         # globbing); bash would read a here-string one byte per syscall.
+@@ -349,7 +352,6 @@
+         policy=${f[38]}
+         [[ $policy == 0 ]] || continue
+ 
+-        d=$((run - t0[$t]))
+         case $name in
+             RenderThread* | RHIThread | UnityGfxDevice*)
+                 ((d > pref_d)) && { pref=$t pref_name=$name pref_d=$d; } ;;

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(b LANGUAGES CXX)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_BUILD_TYPE Release)
+find_package(Qt6 REQUIRED COMPONENTS Core Qml)
+add_executable(bench main.cpp win.h)
+target_link_libraries(bench Qt6::Core Qt6::Qml)

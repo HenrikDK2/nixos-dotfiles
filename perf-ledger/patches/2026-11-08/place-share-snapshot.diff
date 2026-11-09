@@ -1,0 +1,74 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -158,6 +158,13 @@
+     return `${Math.round(g.x)},${Math.round(g.y)},${Math.round(g.width)},${Math.round(g.height)}`;
+ }
+ 
++// Left to right, then top to bottom; traversal order breaks ties.
++function compareByPosition(a, b) {
++    return Math.round(a.x) - Math.round(b.x) ||
++        Math.round(a.y) - Math.round(b.y) ||
++        a.traversalIndex - b.traversalIndex;
++}
++
+ function createTileSnapshot(root, sortByGeometry) {
+     const entries = collectLeaves(root).map((tile, traversalIndex) => {
+         const geometry = tile.absoluteGeometry;
+@@ -173,13 +180,7 @@
+         };
+     });
+ 
+-    if (sortByGeometry) {
+-        entries.sort((a, b) =>
+-            Math.round(a.x) - Math.round(b.x) ||
+-            Math.round(a.y) - Math.round(b.y) ||
+-            a.traversalIndex - b.traversalIndex
+-        );
+-    }
++    if (sortByGeometry) entries.sort(compareByPosition);
+ 
+     const byTile = new Map();
+     for (const entry of entries) byTile.set(entry.tile, entry);
+@@ -187,6 +188,12 @@
+     return { root, entries, byTile };
+ }
+ 
++// The same tiles and geometry, ordered as createTileSnapshot(root, true) orders them.
++function sortedSnapshot(snapshot) {
++    const entries = snapshot.entries.slice().sort(compareByPosition);
++    return { root: snapshot.root, entries, byTile: snapshot.byTile };
++}
++
+ function snapshotForRoot(root, snapshotCache) {
+     if (snapshotCache?.has(root)) return snapshotCache.get(root);
+ 
+@@ -504,7 +511,10 @@
+ // ---------------------------------------------------------------------------
+ function placeWindow(window, desktopChanged = false) {
+     if (!window.normalWindow) return;
+-    track(window);
++
++    // Tracking a new window reads the layout; placement below reuses it.
++    const snapshotCache = new Map();
++    track(window, snapshotCache);
+ 
+     if (window.fullScreen || window.dialog || window.transient ||
+         !window.moveable || !window.resizeable ||
+@@ -518,7 +528,7 @@
+     const root = rootTileFor(window);
+     if (!root || root.tiles.length === 0) return;
+ 
+-    const snapshot = createTileSnapshot(root, true);
++    const snapshot = sortedSnapshot(snapshotForRoot(root, snapshotCache));
+ 
+     // Keep the current tile if it already belongs to the destination layout.
+     if (desktopChanged && window.tile && snapshot.byTile.has(window.tile)) {
+@@ -526,7 +536,7 @@
+     }
+ 
+     const { entries } = snapshot;
+-    const snapshotCache = new Map([[root, snapshot]]);
++    snapshotCache.set(root, snapshot);
+     const order = buildOrder(cfg, entries.length);
+     const occupancy = computeOccupancies(snapshot, window, snapshotCache);
+ 

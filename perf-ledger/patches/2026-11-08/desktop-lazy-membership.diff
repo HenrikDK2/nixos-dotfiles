@@ -1,0 +1,33 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -158,8 +158,8 @@
+     return `${Math.round(g.x)},${Math.round(g.y)},${Math.round(g.width)},${Math.round(g.height)}`;
+ }
+ 
+-function createTileSnapshot(root, sortByGeometry) {
+-    const entries = collectLeaves(root).map((tile, traversalIndex) => {
++function createTileSnapshot(root, sortByGeometry, leaves = collectLeaves(root)) {
++    const entries = leaves.map((tile, traversalIndex) => {
+         const geometry = tile.absoluteGeometry;
+ 
+         return {
+@@ -518,13 +518,16 @@
+     const root = rootTileFor(window);
+     if (!root || root.tiles.length === 0) return;
+ 
+-    const snapshot = createTileSnapshot(root, true);
++    const leaves = collectLeaves(root);
+ 
+     // Keep the current tile if it already belongs to the destination layout.
+-    if (desktopChanged && window.tile && snapshot.byTile.has(window.tile)) {
+-        return;
++    if (desktopChanged) {
++        const tile = window.tile;
++        if (tile && leaves.includes(tile)) return;
+     }
+ 
++    const snapshot = createTileSnapshot(root, true, leaves);
++
+     const { entries } = snapshot;
+     const snapshotCache = new Map([[root, snapshot]]);
+     const order = buildOrder(cfg, entries.length);

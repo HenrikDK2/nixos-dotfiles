@@ -1,0 +1,14 @@
+diff -ru a/system/services/gameboost/start.sh b/system/services/gameboost/start.sh
+--- a/system/services/gameboost/start.sh	2026-11-08 18:53:48.619509736 +0000
++++ b/system/services/gameboost/start.sh	2026-11-08 18:53:48.622914065 +0000
+@@ -44,7 +44,9 @@
+             cur=${cur#*\[}
+             cur=${cur%%\]*}
+         fi
+-        save_original "$1" "$cur"
++        # save_original without its is_saved check, just done
++        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
++        SAVED[$1]=1
+     fi
+ 
+     echo "$2" > "$1" 2>/dev/null

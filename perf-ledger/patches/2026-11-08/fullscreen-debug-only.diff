@@ -1,0 +1,30 @@
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -361,7 +361,8 @@
+     }
+ 
+     window.fullScreenChanged.connect(() => {
+-        const cfg = readSettings();
++        // Only the debug flag is used here; placement re-reads the full settings.
++        const debug = readConfig("Debug", false) === true;
+ 
+         if (window.fullScreen) {
+             state.userUntiled = false;
+@@ -373,7 +374,7 @@
+                 if (tile) rememberTileState(state, tile);
+             }
+ 
+-            if (cfg.debug) {
++            if (debug) {
+                 log(window.resourceClass +
+                     " entered fullscreen (reserved key: " + state.key + ")");
+             }
+@@ -382,7 +383,7 @@
+ 
+         tryRestoreTile(window);
+ 
+-        if (cfg.debug) {
++        if (debug) {
+             log(window.resourceClass + " exited fullscreen (tile: " +
+                 (window.tile ? "rebound" : "reserved via key " + state.key) + ")");
+         }
