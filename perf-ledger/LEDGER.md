@@ -78,6 +78,13 @@ re-benchmark → 3 skeptical verifiers per surviving candidate. Sandbox: 4 vCPU,
 counters (no `perf`), so instruction counts come from valgrind/callgrind.
 
 ### 2026-11-08 run 1 outcome
+**Correction (written by run 1, 2026-11-09 ~03:50 UTC):** run 1 was NOT interrupted — it
+was still running (a 9 h workflow: 104 agents) when run 2 started. Its hypothesis rows are
+in the table above (dated 2026-11-08), its harnesses are under `bench/`, all candidate
+patches under `patches/2026-11-08/`. Run 1 is now composing PRs from the candidates that
+passed all verifiers (gameboostd, gameboost scripts, mastertile). The a6dcc5d/56dbb7f
+restructure is a pure rename (no content change), so run 1's measurements still apply.
+Run 2: don't re-test these hypotheses; pick other angles/targets (see BACKLOG.md).
 Interrupted: no hypothesis rows and no RUNS.md row were written. Nothing from run 1 counts
 as tested; run 2 re-plans the same targets from scratch (paths moved in a6dcc5d to
 `system/services/gameboost/src/` and `scripts/`).
