@@ -158,6 +158,13 @@ function rectKey(g) {
     return `${Math.round(g.x)},${Math.round(g.y)},${Math.round(g.width)},${Math.round(g.height)}`;
 }
 
+// Left to right, then top to bottom; traversal order breaks ties.
+function compareByPosition(a, b) {
+    return Math.round(a.x) - Math.round(b.x) ||
+        Math.round(a.y) - Math.round(b.y) ||
+        a.traversalIndex - b.traversalIndex;
+}
+
 function createTileSnapshot(root, sortByGeometry) {
     const entries = collectLeaves(root).map((tile, traversalIndex) => {
         const geometry = tile.absoluteGeometry;
@@ -173,18 +180,18 @@ function createTileSnapshot(root, sortByGeometry) {
         };
     });
 
-    if (sortByGeometry) {
-        entries.sort((a, b) =>
-            Math.round(a.x) - Math.round(b.x) ||
-            Math.round(a.y) - Math.round(b.y) ||
-            a.traversalIndex - b.traversalIndex
-        );
-    }
+    if (sortByGeometry) entries.sort(compareByPosition);
 
     const byTile = new Map();
     for (const entry of entries) byTile.set(entry.tile, entry);
 
     return { root, entries, byTile };
+}
+
+// The same tiles and geometry, ordered as createTileSnapshot(root, true) orders them.
+function sortedSnapshot(snapshot) {
+    const entries = snapshot.entries.slice().sort(compareByPosition);
+    return { root: snapshot.root, entries, byTile: snapshot.byTile };
 }
 
 function snapshotForRoot(root, snapshotCache) {
@@ -361,7 +368,8 @@ function track(window, snapshotCache) {
     }
 
     window.fullScreenChanged.connect(() => {
-        const cfg = readSettings();
+        // Only the debug flag is used here; placement re-reads the full settings.
+        const debug = readConfig("Debug", false) === true;
 
         if (window.fullScreen) {
             state.userUntiled = false;
@@ -373,7 +381,7 @@ function track(window, snapshotCache) {
                 if (tile) rememberTileState(state, tile);
             }
 
-            if (cfg.debug) {
+            if (debug) {
                 log(window.resourceClass +
                     " entered fullscreen (reserved key: " + state.key + ")");
             }
@@ -382,15 +390,17 @@ function track(window, snapshotCache) {
 
         tryRestoreTile(window);
 
-        if (cfg.debug) {
+        if (debug) {
             log(window.resourceClass + " exited fullscreen (tile: " +
                 (window.tile ? "rebound" : "reserved via key " + state.key) + ")");
         }
     });
 
     window.frameGeometryChanged.connect(() => {
-        if (window.fullScreen || window.minimized || window.move || window.resize ||
-            window.tile || state.userUntiled) {
+        // Most common exits first: a dragged window is user-untiled and a tiled
+        // window has a tile, so their geometry storms stop at the first check.
+        if (state.userUntiled || window.tile || window.fullScreen ||
+            window.move || window.resize || window.minimized) {
             return;
         }
 
@@ -504,7 +514,10 @@ function computeOccupancies(snapshot, selfWindow, snapshotCache) {
 // ---------------------------------------------------------------------------
 function placeWindow(window, desktopChanged = false) {
     if (!window.normalWindow) return;
-    track(window);
+
+    // Tracking a new window reads the layout; placement below reuses it.
+    const snapshotCache = new Map();
+    track(window, snapshotCache);
 
     if (window.fullScreen || window.dialog || window.transient ||
         !window.moveable || !window.resizeable ||
@@ -518,7 +531,7 @@ function placeWindow(window, desktopChanged = false) {
     const root = rootTileFor(window);
     if (!root || root.tiles.length === 0) return;
 
-    const snapshot = createTileSnapshot(root, true);
+    const snapshot = sortedSnapshot(snapshotForRoot(root, snapshotCache));
 
     // Keep the current tile if it already belongs to the destination layout.
     if (desktopChanged && window.tile && snapshot.byTile.has(window.tile)) {
@@ -526,7 +539,7 @@ function placeWindow(window, desktopChanged = false) {
     }
 
     const { entries } = snapshot;
-    const snapshotCache = new Map([[root, snapshot]]);
+    snapshotCache.set(root, snapshot);
     const order = buildOrder(cfg, entries.length);
     const occupancy = computeOccupancies(snapshot, window, snapshotCache);
 
@@ -719,8 +732,12 @@ for (const direction of ["left", "right", "up", "down"]) {
     );
 }
 
-workspace.windowList().forEach(window => {
-    if (window.normalWindow) track(window);
-});
+{
+    // Existing windows on the same output and desktop share one read of their layout.
+    const snapshotCache = new Map();
+    workspace.windowList().forEach(window => {
+        if (window.normalWindow) track(window, snapshotCache);
+    });
+}
 
 workspace.windowAdded.connect(placeWindow);
