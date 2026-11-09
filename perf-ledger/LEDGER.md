@@ -26,3 +26,19 @@ Targets (none covered before; picked the three hottest code paths):
 Method: Workflow fan-out (analysis+baseline+candidates per target) → independent
 re-benchmark → 3 skeptical verifiers per surviving candidate. Sandbox: 4 vCPU, no perf
 counters (no `perf`), so instruction counts come from valgrind/callgrind.
+
+### 2026-11-08 run 1 outcome
+Interrupted: no hypothesis rows and no RUNS.md row were written. Nothing from run 1 counts
+as tested; run 2 re-plans the same targets from scratch (paths moved in a6dcc5d to
+`system/services/gameboost/src/` and `scripts/`).
+
+### 2026-11-09 (run 2)
+Targets (all still uncovered):
+1. `system/services/gameboost/src/gameboostd.c` — per-exec-event cost (proc reads,
+   pattern match), full_scan cost, startup, build flags vs size/RSS (callgrind Ir).
+2. `system/services/gameboost/scripts/start.sh` + `exit.sh` — entry/exit forks/execs and
+   wall time vs stubbed sysfs/commands (strace -f -c, hyperfine).
+3. `home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js` — per-event
+   handler cost with mocked KWin API by window count (node microbench).
+Method: Workflow — per target: analysis+harness+baseline+candidates agent, then an
+independent re-benchmark agent and 3 skeptical verifiers per candidate claiming >=5%.
