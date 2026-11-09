@@ -1,0 +1,24 @@
+diff --git a/system/services/gameboost/src/gameboostd.c b/system/services/gameboost/src/gameboostd.c
+index 7503186..ce7a391 100644
+--- a/system/services/gameboost/src/gameboostd.c
++++ b/system/services/gameboost/src/gameboostd.c
+@@ -816,13 +816,18 @@ static int drain_events(void) {
+   int64_t due = now_ms() + FIRST_CHECK_MS;
+   unsigned long before = stat_events;
+ 
+-  for (;;) {
++  /* Set up once: the kernel only writes msg_len, msg_flags and (with no
++   * control buffer, unchanged) msg_controllen back; the iovecs stay as set.
++   * Most wakeups bring one or two events, so redoing all 64 cost more than
++   * reading them. */
++  if (!iov[0].iov_base)
+     for (int i = 0; i < EV_BATCH; ++i) {
+       iov[i].iov_base = bufs[i];
+       iov[i].iov_len = EV_SIZE;
+       msgs[i].msg_hdr = (struct msghdr){.msg_iov = &iov[i], .msg_iovlen = 1};
+     }
+ 
++  for (;;) {
+     int got = recvmmsg(sock, msgs, EV_BATCH, MSG_DONTWAIT, NULL);
+     if (got < 0) {
+       if (errno == EINTR)

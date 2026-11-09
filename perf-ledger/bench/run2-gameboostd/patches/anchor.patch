@@ -1,0 +1,33 @@
+diff --git a/system/services/gameboost/src/gameboostd.c b/system/services/gameboost/src/gameboostd.c
+index 7503186..d516890 100644
+--- a/system/services/gameboost/src/gameboostd.c
++++ b/system/services/gameboost/src/gameboostd.c
+@@ -312,9 +312,27 @@ static int split_alts(const char *re, struct altset *set) {
+   return set->n;
+ }
+ 
++/* regexec() tries an unanchored regex at every position where it could start,
++ * and with a .* or .+ in it each such try can run to the end of the line.
++ * "^.*" + the alternative has the same matches (it has no top-level '|') and
++ * is decided in one pass over the line. Not added when the alternative is
++ * anchored already, or would start with a repetition operator (an error or a
++ * different meaning after ".*"). */
+ static int compile_alt(struct alt *a) {
+   if (!a->compiled) {
+-    if (regcomp(&a->re, a->pat, REG_EXTENDED | REG_NOSUB))
++    const char *p = a->pat;
++    int r;
++    if (*p == '^' || strchr("*+?{", *p)) {
++      r = regcomp(&a->re, p, REG_EXTENDED | REG_NOSUB);
++    } else {
++      size_t n = strlen(p);
++      char *q = xalloc(malloc(n + 4));
++      memcpy(q, "^.*", 3);
++      memcpy(q + 3, p, n + 1);
++      r = regcomp(&a->re, q, REG_EXTENDED | REG_NOSUB);
++      free(q);
++    }
++    if (r)
+       return -1;
+     a->compiled = 1;
+   }

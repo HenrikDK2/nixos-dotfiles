@@ -1,0 +1,43 @@
+diff --git a/system/services/gameboost/scripts/start.sh b/system/services/gameboost/scripts/start.sh
+index e46e1f1..257b21f 100644
+--- a/system/services/gameboost/scripts/start.sh
++++ b/system/services/gameboost/scripts/start.sh
+@@ -194,11 +194,37 @@ disable_pcie_power_management() {
+ # This loop covers every process, several times per game: it uses expansions
+ # that are linear in the line length and no here-strings (which bash reads one
+ # byte per syscall), and redirects stderr once.
++# With CONFIG_PROC_CHILDREN (/proc/PID/task/TID/children, each thread's
++# children) only the tree itself is read: the game's threads instead of every
++# process on the system. Same TREE, in the same order.
+ tree_pids() {
+-    local stat line head rest pid ppid i
++    local stat line head rest pid ppid i j t
++    local -a more kids_of
+     local -A kids=()
+     TREE=()
+ 
++    if [ -e /proc/thread-self/children ]; then
++        for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
++        for ((i = 0; i < ${#TREE[@]}; i++)); do
++            # Children in pid string order, as the /proc scan below finds
++            # them (insertion sort: a process has only a few).
++            kids_of=()
++            for t in /proc/"${TREE[i]}"/task/*/children; do
++                more=()
++                read -r -a more < "$t"   # 1 at EOF (no newline); more is filled
++                for pid in "${more[@]}"; do
++                    for ((j = ${#kids_of[@]}; j > 0; j--)); do
++                        [[ ${kids_of[j - 1]} > "$pid" ]] || break
++                        kids_of[j]=${kids_of[j - 1]}
++                    done
++                    kids_of[j]=$pid
++                done
++            done 2>/dev/null
++            TREE+=("${kids_of[@]}")
++        done
++        return
++    fi
++
+     for stat in /proc/[0-9]*/stat; do
+         # read returns 1 at EOF (no NUL in the file); line is still filled.
+         read -r -d '' line < "$stat"

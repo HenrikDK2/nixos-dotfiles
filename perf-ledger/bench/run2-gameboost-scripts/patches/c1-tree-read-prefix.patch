@@ -1,0 +1,27 @@
+diff --git a/system/services/gameboost/scripts/start.sh b/system/services/gameboost/scripts/start.sh
+index e46e1f1..8ebcdf5 100644
+--- a/system/services/gameboost/scripts/start.sh
++++ b/system/services/gameboost/scripts/start.sh
+@@ -200,11 +200,20 @@ tree_pids() {
+     TREE=()
+ 
+     for stat in /proc/[0-9]*/stat; do
+-        # read returns 1 at EOF (no NUL in the file); line is still filled.
+-        read -r -d '' line < "$stat"
++        # Only the first 128 bytes: bash's read costs per byte, and the ppid
++        # is the 4th field. comm is at most 63 bytes (64-byte kthread name
++        # buffer), so the last ') ' and the ppid after it are within them.
++        # read returns 1 at EOF; line is still filled.
++        read -r -N 128 line < "$stat"
+         head=${line%") "*}       # up to the last ') '
+         rest=${line#"$head") }   # after it; the whole line if none
+         ppid=${rest#* }          # "STATE PPID ..."
++        if [[ $ppid != *" "* ]]; then   # ppid cut off: the whole line
++            read -r -d '' line < "$stat"
++            head=${line%") "*}
++            rest=${line#"$head") }
++            ppid=${rest#* }
++        fi
+         ppid=${ppid%% *}
+         [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
+         pid=${stat#/proc/}

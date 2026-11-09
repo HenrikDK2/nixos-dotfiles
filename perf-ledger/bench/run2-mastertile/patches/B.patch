@@ -1,0 +1,165 @@
+diff --git a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+index 35d6f5e..2590cbe 100644
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -158,6 +158,12 @@ function rectKey(g) {
+     return `${Math.round(g.x)},${Math.round(g.y)},${Math.round(g.width)},${Math.round(g.height)}`;
+ }
+ 
++function compareEntryPosition(a, b) {
++    return Math.round(a.x) - Math.round(b.x) ||
++        Math.round(a.y) - Math.round(b.y) ||
++        a.traversalIndex - b.traversalIndex;
++}
++
+ function createTileSnapshot(root, sortByGeometry) {
+     const entries = collectLeaves(root).map((tile, traversalIndex) => {
+         const geometry = tile.absoluteGeometry;
+@@ -173,13 +179,7 @@ function createTileSnapshot(root, sortByGeometry) {
+         };
+     });
+ 
+-    if (sortByGeometry) {
+-        entries.sort((a, b) =>
+-            Math.round(a.x) - Math.round(b.x) ||
+-            Math.round(a.y) - Math.round(b.y) ||
+-            a.traversalIndex - b.traversalIndex
+-        );
+-    }
++    if (sortByGeometry) entries.sort(compareEntryPosition);
+ 
+     const byTile = new Map();
+     for (const entry of entries) byTile.set(entry.tile, entry);
+@@ -187,6 +187,15 @@ function createTileSnapshot(root, sortByGeometry) {
+     return { root, entries, byTile };
+ }
+ 
++// The geometry-sorted view of a traversal-order snapshot, sharing its entries.
++function sortedSnapshot(snapshot) {
++    return {
++        root: snapshot.root,
++        entries: snapshot.entries.slice().sort(compareEntryPosition),
++        byTile: snapshot.byTile,
++    };
++}
++
+ function snapshotForRoot(root, snapshotCache) {
+     if (snapshotCache?.has(root)) return snapshotCache.get(root);
+ 
+@@ -264,16 +273,6 @@ function findTileByStateLazy(window, state, root, frameGeometry) {
+     return null;
+ }
+ 
+-function findTileByState(window, state, snapshotCache) {
+-    const root = rootTileFor(window);
+-    if (!root) return null;
+-
+-    const snapshot = snapshotForRoot(root, snapshotCache);
+-    const entry = findTileEntryByStateInSnapshot(window, state, snapshot);
+-
+-    return entry ? entry.tile : null;
+-}
+-
+ // The output and desktops of the window being placed or focused, read once
+ // and then compared against every other window.
+ function windowContext(window) {
+@@ -308,6 +307,16 @@ function rememberTileState(state, tile) {
+     state.userUntiled = false;
+ }
+ 
++// Same as rememberTileState(state, entry.tile), with the key the snapshot
++// already computed from that tile's geometry.
++function rememberTileEntry(state, entry) {
++    if (!state || !entry) return;
++
++    state.tile = entry.tile;
++    state.key = entry.key;
++    state.userUntiled = false;
++}
++
+ function tryRestoreTile(window, snapshotCache) {
+     const state = window.mt;
+ 
+@@ -316,11 +325,15 @@ function tryRestoreTile(window, snapshotCache) {
+         return;
+     }
+ 
+-    const tile = findTileByState(window, state, snapshotCache);
++    const root = rootTileFor(window);
++    if (!root) return;
++
++    const snapshot = snapshotForRoot(root, snapshotCache);
++    const entry = findTileEntryByStateInSnapshot(window, state, snapshot);
+ 
+-    if (tile) {
+-        window.tile = tile;
+-        rememberTileState(state, tile);
++    if (entry) {
++        window.tile = entry.tile;
++        rememberTileEntry(state, entry);
+     }
+ }
+ 
+@@ -328,10 +341,13 @@ function rememberWindowTileState(window, state, snapshotCache) {
+     if (window.tile) {
+         rememberTileState(state, window.tile);
+     } else if (!window.fullScreen && !state.userUntiled) {
+-        const root = snapshotCache && rootTileFor(window);
+-        const snapshot = root ? snapshotForRoot(root, snapshotCache) : null;
+-        const tile = findLeafMatchingGeometry(window, snapshot);
+-        if (tile) rememberTileState(state, tile);
++        const root = rootTileFor(window);
++        if (!root) return;
++
++        const snapshot = snapshotCache
++            ? snapshotForRoot(root, snapshotCache)
++            : createTileSnapshot(root, false);
++        rememberTileEntry(state, findLeafEntryMatchingGeometry(window, snapshot));
+     }
+ }
+ 
+@@ -504,7 +520,11 @@ function computeOccupancies(snapshot, selfWindow, snapshotCache) {
+ // ---------------------------------------------------------------------------
+ function placeWindow(window, desktopChanged = false) {
+     if (!window.normalWindow) return;
+-    track(window);
++
++    // Tracking a new window matches it against the same tile tree that
++    // placement reads; share that snapshot instead of reading the tree twice.
++    const trackCache = new Map();
++    track(window, trackCache);
+ 
+     if (window.fullScreen || window.dialog || window.transient ||
+         !window.moveable || !window.resizeable ||
+@@ -515,10 +535,19 @@ function placeWindow(window, desktopChanged = false) {
+     const cfg = readSettings();
+     if (cfg.ignored.has(String(window.resourceClass).toLowerCase())) return;
+ 
+-    const root = rootTileFor(window);
+-    if (!root || root.tiles.length === 0) return;
++    const tracked = trackCache.values().next().value;
++    let root, snapshot;
+ 
+-    const snapshot = createTileSnapshot(root, true);
++    if (tracked) {
++        root = tracked.root;
++        // A childless root is its own only leaf.
++        if (tracked.entries.length === 1 && tracked.entries[0].tile === root) return;
++        snapshot = sortedSnapshot(tracked);
++    } else {
++        root = rootTileFor(window);
++        if (!root || root.tiles.length === 0) return;
++        snapshot = createTileSnapshot(root, true);
++    }
+ 
+     // Keep the current tile if it already belongs to the destination layout.
+     if (desktopChanged && window.tile && snapshot.byTile.has(window.tile)) {
+@@ -565,7 +594,7 @@ function placeWindow(window, desktopChanged = false) {
+ 
+     if (target) {
+         window.tile = target;
+-        if (window.mt) rememberTileState(window.mt, target);
++        if (window.mt) rememberTileEntry(window.mt, snapshot.byTile.get(target));
+     }
+ }
+ 

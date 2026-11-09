@@ -1,0 +1,17 @@
+diff --git a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+index 35d6f5e..93100fb 100644
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -389,8 +389,10 @@ function track(window, snapshotCache) {
+     });
+ 
+     window.frameGeometryChanged.connect(() => {
+-        if (window.fullScreen || window.minimized || window.move || window.resize ||
+-            window.tile || state.userUntiled) {
++        // Fires on every geometry step (drags, tile resizes), so test the
++        // script's own flag first, then the property that is usually set.
++        if (state.userUntiled || window.tile || window.fullScreen ||
++            window.minimized || window.move || window.resize) {
+             return;
+         }
+ 

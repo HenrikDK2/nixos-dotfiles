@@ -1,0 +1,126 @@
+diff --git a/system/services/gameboost/src/gameboostd.c b/system/services/gameboost/src/gameboostd.c
+index 7503186..ca2e2a7 100644
+--- a/system/services/gameboost/src/gameboostd.c
++++ b/system/services/gameboost/src/gameboostd.c
+@@ -43,6 +43,9 @@
+ #include <sys/wait.h>
+ #include <time.h>
+ #include <unistd.h>
++#ifdef __SSE2__
++#include <emmintrin.h>
++#endif
+ 
+ #ifndef SYS_close_range
+ #define SYS_close_range 436
+@@ -96,9 +99,17 @@ struct alt {
+   regex_t re;
+ };
+ 
++/* Literal prefilter for a whole set in one pass over the line: the bytes
++ * that are some literal's anchor (at most LIT_PF_MAX distinct, and at most 64
++ * alternatives; otherwise each alternative uses has_lit()). */
++#define LIT_PF_MAX 8
+ struct altset {
+   struct alt *v;
+   int n;
++  int npf;                      /* distinct anchor bytes; 0 = no prefilter */
++  unsigned char pf[LIT_PF_MAX];     /* the anchor bytes */
++  uint64_t pfmask[LIT_PF_MAX];      /* alternatives anchored on pf[k] */
++  unsigned char pfslot[256];    /* byte -> k + 1, or 0 */
+ };
+ 
+ static struct altset games, excls;
+@@ -253,6 +264,73 @@ static int has_lit(const char *s, size_t n, const struct alt *a) {
+   return 0;
+ }
+ 
++/* Bit i set: alternative i's literal occurs in s. Finds every position that
++ * holds an anchor byte (16 at a time with SSE2) and confirms each literal
++ * anchored there with memcmp(); same answers as has_lit() per alternative. */
++static uint64_t lit_mask(const struct altset *set, const char *s, size_t n) {
++  uint64_t found = 0;
++  size_t i = 0;
++
++#define PF_HIT(pos)                                                            \
++  do {                                                                         \
++    size_t q_ = (pos);                                                         \
++    uint64_t m_ = set->pfmask[set->pfslot[(unsigned char)s[q_]] - 1] & ~found; \
++    while (m_) {                                                               \
++      int b_ = __builtin_ctzll(m_);                                            \
++      const struct alt *a_ = &set->v[b_];                                      \
++      m_ &= m_ - 1;                                                            \
++      if (q_ >= a_->anc && q_ - a_->anc + a_->litn <= n &&                     \
++          !memcmp(s + q_ - a_->anc, a_->lit, a_->litn))                        \
++        found |= 1ULL << b_;                                                   \
++    }                                                                          \
++  } while (0)
++
++#ifdef __SSE2__
++  __m128i want[LIT_PF_MAX];
++  for (int k = 0; k < set->npf; ++k)
++    want[k] = _mm_set1_epi8((char)set->pf[k]);
++  for (; i + 16 <= n; i += 16) {
++    __m128i v = _mm_loadu_si128((const __m128i *)(s + i));
++    __m128i eq = _mm_cmpeq_epi8(v, want[0]);
++    for (int k = 1; k < set->npf; ++k)
++      eq = _mm_or_si128(eq, _mm_cmpeq_epi8(v, want[k]));
++    unsigned bits = (unsigned)_mm_movemask_epi8(eq);
++    while (bits) {
++      PF_HIT(i + (size_t)__builtin_ctz(bits));
++      bits &= bits - 1;
++    }
++  }
++#endif
++  for (; i < n; ++i)
++    if (set->pfslot[(unsigned char)s[i]])
++      PF_HIT(i);
++#undef PF_HIT
++  return found;
++}
++
++static void setup_prefilter(struct altset *set) {
++  set->npf = 0;
++  if (set->n > 64)
++    return;
++  memset(set->pfslot, 0, sizeof set->pfslot);
++  for (int i = 0; i < set->n; ++i) {
++    const struct alt *a = &set->v[i];
++    if (!a->lit)
++      continue;
++    unsigned char c = (unsigned char)a->lit[a->anc];
++    if (!set->pfslot[c]) {
++      if (set->npf == LIT_PF_MAX) {
++        set->npf = 0; /* too many: has_lit() per alternative */
++        return;
++      }
++      set->pf[set->npf] = c;
++      set->pfmask[set->npf] = 0;
++      set->pfslot[c] = (unsigned char)++set->npf;
++    }
++    set->pfmask[set->pfslot[c] - 1] |= 1ULL << i;
++  }
++}
++
+ /* "wine" in a command line; 'w' is its least common byte. */
+ static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
+ 
+@@ -309,6 +387,7 @@ static int split_alts(const char *re, struct altset *set) {
+       start = p + 1;
+     }
+   }
++  setup_prefilter(set);
+   return set->n;
+ }
+ 
+@@ -322,9 +401,10 @@ static int compile_alt(struct alt *a) {
+ }
+ 
+ static int set_matches(struct altset *set, const char *s, size_t n) {
++  uint64_t found = set->npf ? lit_mask(set, s, n) : 0;
+   for (int i = 0; i < set->n; ++i) {
+     struct alt *a = &set->v[i];
+-    if (a->lit && !has_lit(s, n, a))
++    if (a->lit && (set->npf ? !(found >> i & 1) : !has_lit(s, n, a)))
+       continue;
+     if (compile_alt(a))
+       _exit(2); /* validated at startup; cannot happen */

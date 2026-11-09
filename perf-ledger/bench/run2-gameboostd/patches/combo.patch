@@ -1,0 +1,139 @@
+diff --git a/system/services/gameboost/src/gameboostd.c b/system/services/gameboost/src/gameboostd.c
+index 7503186..4be8c3b 100644
+--- a/system/services/gameboost/src/gameboostd.c
++++ b/system/services/gameboost/src/gameboostd.c
+@@ -92,6 +92,7 @@ struct alt {
+   const char *lit; /* literal every match contains, or NULL */
+   size_t litn;
+   size_t anc; /* index in lit of its least common byte (memchr anchor) */
++  size_t anc2; /* index of the next least common one, tested before memcmp */
+   int compiled;
+   regex_t re;
+ };
+@@ -230,31 +231,37 @@ static int byte_rank(unsigned char c) {
+   return 2;
+ }
+ 
+-static size_t pick_anchor(const char *lit, size_t n) {
+-  size_t best = 0;
+-  for (size_t i = 1; i < n; ++i)
+-    if (byte_rank((unsigned char)lit[i]) < byte_rank((unsigned char)lit[best]))
++/* Index of the least common byte of lit, other than index `skip`. */
++static size_t pick_anchor(const char *lit, size_t n, size_t skip) {
++  size_t best = skip == 0 ? 1 : 0;
++  for (size_t i = best + 1; i < n; ++i)
++    if (i != skip &&
++        byte_rank((unsigned char)lit[i]) < byte_rank((unsigned char)lit[best]))
+       best = i;
+   return best;
+ }
+ 
+ /* memmem(s, n, a->lit, a->litn) != NULL, found by memchr() on the anchor
+- * byte: few candidate positions, each confirmed with memcmp(). */
++ * byte: few candidate positions, each confirmed with memcmp() once the
++ * second anchor byte matches too (most candidates fail that inline test). */
+ static int has_lit(const char *s, size_t n, const struct alt *a) {
+   size_t k = a->anc, ln = a->litn;
+   if (n < ln)
+     return 0;
+   const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
++  const char c2 = a->lit[a->anc2];
++  const size_t k2 = a->anc2;
+   while (p <= last && (p = memchr(p, a->lit[k], (size_t)(last - p) + 1))) {
+-    if (!memcmp(p - k, a->lit, ln))
++    if ((p - k)[k2] == c2 && !memcmp(p - k, a->lit, ln))
+       return 1;
+     ++p;
+   }
+   return 0;
+ }
+ 
+-/* "wine" in a command line; 'w' is its least common byte. */
+-static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
++/* "wine" in a command line; 'w' is its least common byte, then 'n'. */
++static const struct alt wine_lit = {
++    .lit = "wine", .litn = 4, .anc = 0, .anc2 = 2};
+ 
+ static void *xalloc(void *p) {
+   if (!p) {
+@@ -302,7 +309,8 @@ static int split_alts(const char *re, struct altset *set) {
+         free(pool);
+         a->lit = NULL;
+       } else {
+-        a->anc = pick_anchor(a->lit, a->litn);
++        a->anc = pick_anchor(a->lit, a->litn, (size_t)-1);
++        a->anc2 = pick_anchor(a->lit, a->litn, a->anc);
+       }
+       if (!*p)
+         break;
+@@ -312,9 +320,49 @@ static int split_alts(const char *re, struct altset *set) {
+   return set->n;
+ }
+ 
++/* regexec() tries an unanchored regex at every position where it could start,
++ * and with a .* or .+ inside, each such try can run to the end of the line.
++ * "^.*" + the alternative has the same matches (it has no top-level '|') and
++ * is decided in one pass over the line. Used for those, and for alternatives
++ * without a literal (run on every line they see); a short pattern gated by
++ * its literal is cheaper unanchored: few start positions, short tries. Never
++ * added when the alternative is anchored already, or starts with a
++ * repetition operator (an error, or a different meaning after ".*"). */
++/* An unescaped .* or .+ before the end of the pattern. */
++static int inner_dotstar(const char *p) {
++  for (; *p; ++p) {
++    if (*p == '\\' && p[1]) {
++      ++p;
++      continue;
++    }
++    if (*p == '[') {
++      const char *q = skip_bracket(p);
++      if (q) {
++        p = q;
++        continue;
++      }
++    }
++    if (*p == '.' && (p[1] == '*' || p[1] == '+') && p[2])
++      return 1;
++  }
++  return 0;
++}
++
+ static int compile_alt(struct alt *a) {
+   if (!a->compiled) {
+-    if (regcomp(&a->re, a->pat, REG_EXTENDED | REG_NOSUB))
++    const char *p = a->pat;
++    int r;
++    if (*p == '^' || strchr("*+?{", *p) || (a->lit && !inner_dotstar(p))) {
++      r = regcomp(&a->re, p, REG_EXTENDED | REG_NOSUB);
++    } else {
++      size_t n = strlen(p);
++      char *q = xalloc(malloc(n + 4));
++      memcpy(q, "^.*", 3);
++      memcpy(q + 3, p, n + 1);
++      r = regcomp(&a->re, q, REG_EXTENDED | REG_NOSUB);
++      free(q);
++    }
++    if (r)
+       return -1;
+     a->compiled = 1;
+   }
+@@ -816,13 +864,18 @@ static int drain_events(void) {
+   int64_t due = now_ms() + FIRST_CHECK_MS;
+   unsigned long before = stat_events;
+ 
+-  for (;;) {
++  /* Set up once: the kernel only writes msg_len, msg_flags and (with no
++   * control buffer, unchanged) msg_controllen back; the iovecs stay as set.
++   * Most wakeups bring one or two events, so redoing all 64 cost more than
++   * reading them. */
++  if (!iov[0].iov_base)
+     for (int i = 0; i < EV_BATCH; ++i) {
+       iov[i].iov_base = bufs[i];
+       iov[i].iov_len = EV_SIZE;
+       msgs[i].msg_hdr = (struct msghdr){.msg_iov = &iov[i], .msg_iovlen = 1};
+     }
+ 
++  for (;;) {
+     int got = recvmmsg(sock, msgs, EV_BATCH, MSG_DONTWAIT, NULL);
+     if (got < 0) {
+       if (errno == EINTR)

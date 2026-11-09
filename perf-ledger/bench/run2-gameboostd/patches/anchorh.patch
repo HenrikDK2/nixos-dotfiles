@@ -1,0 +1,55 @@
+diff --git a/system/services/gameboost/src/gameboostd.c b/system/services/gameboost/src/gameboostd.c
+index 7503186..9db18a9 100644
+--- a/system/services/gameboost/src/gameboostd.c
++++ b/system/services/gameboost/src/gameboostd.c
+@@ -312,9 +312,49 @@ static int split_alts(const char *re, struct altset *set) {
+   return set->n;
+ }
+ 
++/* regexec() tries an unanchored regex at every position where it could start,
++ * and with a .* or .+ inside, each such try can run to the end of the line.
++ * "^.*" + the alternative has the same matches (it has no top-level '|') and
++ * is decided in one pass over the line. Used for those, and for alternatives
++ * without a literal (run on every line they see); a short pattern gated by
++ * its literal is cheaper unanchored: few start positions, short tries. Never
++ * added when the alternative is anchored already, or starts with a
++ * repetition operator (an error, or a different meaning after ".*"). */
++/* An unescaped .* or .+ before the end of the pattern. */
++static int inner_dotstar(const char *p) {
++  for (; *p; ++p) {
++    if (*p == '\\' && p[1]) {
++      ++p;
++      continue;
++    }
++    if (*p == '[') {
++      const char *q = skip_bracket(p);
++      if (q) {
++        p = q;
++        continue;
++      }
++    }
++    if (*p == '.' && (p[1] == '*' || p[1] == '+') && p[2])
++      return 1;
++  }
++  return 0;
++}
++
+ static int compile_alt(struct alt *a) {
+   if (!a->compiled) {
+-    if (regcomp(&a->re, a->pat, REG_EXTENDED | REG_NOSUB))
++    const char *p = a->pat;
++    int r;
++    if (*p == '^' || strchr("*+?{", *p) || (a->lit && !inner_dotstar(p))) {
++      r = regcomp(&a->re, p, REG_EXTENDED | REG_NOSUB);
++    } else {
++      size_t n = strlen(p);
++      char *q = xalloc(malloc(n + 4));
++      memcpy(q, "^.*", 3);
++      memcpy(q + 3, p, n + 1);
++      r = regcomp(&a->re, q, REG_EXTENDED | REG_NOSUB);
++      free(q);
++    }
++    if (r)
+       return -1;
+     a->compiled = 1;
+   }

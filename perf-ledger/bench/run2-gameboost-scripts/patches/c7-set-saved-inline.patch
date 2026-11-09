@@ -1,0 +1,39 @@
+diff --git a/system/services/gameboost/scripts/start.sh b/system/services/gameboost/scripts/start.sh
+index e46e1f1..8cef50a 100644
+--- a/system/services/gameboost/scripts/start.sh
++++ b/system/services/gameboost/scripts/start.sh
+@@ -21,7 +21,7 @@ load_saved() {
+ # is_saved FILE: true if FILE's original is in $STATE. If $STATE was removed
+ # meanwhile (exit.sh of a previous game), nothing counts as saved any more.
+ is_saved() {
+-    [ -f "$STATE" ] || SAVED=()
++    [[ -f $STATE ]] || SAVED=()
+     [[ -n ${SAVED[$1]+x} ]]
+ }
+ 
+@@ -33,10 +33,12 @@ save_original() {
+ }
+ 
+ # set_saved FILE VALUE: save FILE's original once, then write VALUE.
+-# Returns 1 if FILE isn't writable.
++# Returns 1 if FILE isn't writable. Runs for every sysfs file: save_original
++# is inlined (its is_saved check would repeat the one here; only its $STATE
++# test can differ, so that is kept).
+ set_saved() {
+     local cur
+-    [ -w "$1" ] || return 1
++    [[ -w $1 ]] || return 1
+ 
+     if ! is_saved "$1"; then
+         read -r cur < "$1" 2>/dev/null
+@@ -44,7 +46,9 @@ set_saved() {
+             cur=${cur#*\[}
+             cur=${cur%%\]*}
+         fi
+-        save_original "$1" "$cur"
++        [[ -f $STATE ]] || SAVED=()
++        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
++        SAVED[$1]=1
+     fi
+ 
+     echo "$2" > "$1" 2>/dev/null

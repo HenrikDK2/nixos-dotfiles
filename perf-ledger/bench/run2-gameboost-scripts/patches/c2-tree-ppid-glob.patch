@@ -1,0 +1,13 @@
+diff --git a/system/services/gameboost/scripts/start.sh b/system/services/gameboost/scripts/start.sh
+index e46e1f1..9b02cae 100644
+--- a/system/services/gameboost/scripts/start.sh
++++ b/system/services/gameboost/scripts/start.sh
+@@ -206,7 +206,7 @@ tree_pids() {
+         rest=${line#"$head") }   # after it; the whole line if none
+         ppid=${rest#* }          # "STATE PPID ..."
+         ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
++        [[ -n $ppid && $ppid != *[!0-9]* ]] || continue   # gone while reading
+         pid=${stat#/proc/}
+         kids[$ppid]+=" ${pid%/stat}"
+     done 2>/dev/null

@@ -1,0 +1,37 @@
+diff --git a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+index 35d6f5e..06f5e20 100644
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -102,24 +102,26 @@ function buildOrder(cfg, n) {
+ // Tiles & desktops (Plasma 6.0–6.3 and 6.4+)
+ // ---------------------------------------------------------------------------
+ // Root-tile lookups, tried in order until one works; the winner is remembered.
++// Each gets the window's output, already read by rootTileFor.
+ const rootStrategies = {
+-    rootTile: (window, desktop) => workspace.rootTile(window.output, desktop),
+-    output: window => workspace.tilingForScreen(window.output)?.rootTile,
+-    name: window => workspace.tilingForScreen(window.output.name)?.rootTile,
++    rootTile: (output, desktop) => workspace.rootTile(output, desktop),
++    output: output => workspace.tilingForScreen(output)?.rootTile,
++    name: output => workspace.tilingForScreen(output.name)?.rootTile,
+ };
+ let tilingMode = null;
+ 
+ function rootTileFor(window) {
+-    if (!window || !window.output) return null;
++    const output = window && window.output;
++    if (!output) return null;
+ 
+     const desktops = window.desktops;
+     const desktop = desktops?.length ? desktops[0] : workspace.currentDesktop;
+ 
+-    if (tilingMode) return rootStrategies[tilingMode](window, desktop) || null;
++    if (tilingMode) return rootStrategies[tilingMode](output, desktop) || null;
+ 
+     for (const [mode, lookup] of Object.entries(rootStrategies)) {
+         try {
+-            const root = lookup(window, desktop);
++            const root = lookup(output, desktop);
+             if (root) {
+                 tilingMode = mode;
+                 return root;

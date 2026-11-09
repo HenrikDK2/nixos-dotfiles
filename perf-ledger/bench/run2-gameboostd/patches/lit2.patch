@@ -1,0 +1,68 @@
+diff --git a/system/services/gameboost/src/gameboostd.c b/system/services/gameboost/src/gameboostd.c
+index 7503186..dc557b6 100644
+--- a/system/services/gameboost/src/gameboostd.c
++++ b/system/services/gameboost/src/gameboostd.c
+@@ -92,6 +92,7 @@ struct alt {
+   const char *lit; /* literal every match contains, or NULL */
+   size_t litn;
+   size_t anc; /* index in lit of its least common byte (memchr anchor) */
++  size_t anc2; /* index of the next least common one, tested before memcmp */
+   int compiled;
+   regex_t re;
+ };
+@@ -230,31 +231,37 @@ static int byte_rank(unsigned char c) {
+   return 2;
+ }
+ 
+-static size_t pick_anchor(const char *lit, size_t n) {
+-  size_t best = 0;
+-  for (size_t i = 1; i < n; ++i)
+-    if (byte_rank((unsigned char)lit[i]) < byte_rank((unsigned char)lit[best]))
++/* Index of the least common byte of lit, other than index `skip`. */
++static size_t pick_anchor(const char *lit, size_t n, size_t skip) {
++  size_t best = skip == 0 ? 1 : 0;
++  for (size_t i = best + 1; i < n; ++i)
++    if (i != skip &&
++        byte_rank((unsigned char)lit[i]) < byte_rank((unsigned char)lit[best]))
+       best = i;
+   return best;
+ }
+ 
+ /* memmem(s, n, a->lit, a->litn) != NULL, found by memchr() on the anchor
+- * byte: few candidate positions, each confirmed with memcmp(). */
++ * byte: few candidate positions, each confirmed with memcmp() once the
++ * second anchor byte matches too (most candidates fail that inline test). */
+ static int has_lit(const char *s, size_t n, const struct alt *a) {
+   size_t k = a->anc, ln = a->litn;
+   if (n < ln)
+     return 0;
+   const char *p = s + k, *last = s + (n - ln) + k; /* anchor positions */
++  const char c2 = a->lit[a->anc2];
++  const size_t k2 = a->anc2;
+   while (p <= last && (p = memchr(p, a->lit[k], (size_t)(last - p) + 1))) {
+-    if (!memcmp(p - k, a->lit, ln))
++    if ((p - k)[k2] == c2 && !memcmp(p - k, a->lit, ln))
+       return 1;
+     ++p;
+   }
+   return 0;
+ }
+ 
+-/* "wine" in a command line; 'w' is its least common byte. */
+-static const struct alt wine_lit = {.lit = "wine", .litn = 4, .anc = 0};
++/* "wine" in a command line; 'w' is its least common byte, then 'n'. */
++static const struct alt wine_lit = {
++    .lit = "wine", .litn = 4, .anc = 0, .anc2 = 2};
+ 
+ static void *xalloc(void *p) {
+   if (!p) {
+@@ -302,7 +309,8 @@ static int split_alts(const char *re, struct altset *set) {
+         free(pool);
+         a->lit = NULL;
+       } else {
+-        a->anc = pick_anchor(a->lit, a->litn);
++        a->anc = pick_anchor(a->lit, a->litn, (size_t)-1);
++        a->anc2 = pick_anchor(a->lit, a->litn, a->anc);
+       }
+       if (!*p)
+         break;

@@ -35,3 +35,14 @@ Each dir has a README.md with exact commands. Copy the dir to a scratch location
   (correctness / measurement with a different method / relevance). After that the composed patch
   is verified again by 2 skeptics. Prefer deterministic metrics (callgrind, strace, bridge counts):
   the 4 shared vCPUs make wall-clock noisy.
+
+## Harnesses (added run 2, 2026-11-09): `bench/run2-<target>/`
+Alternative, independent harnesses for the same three targets (each with README.md and patches/):
+- `run2-gameboostd/`: driver.c + fake /proc trees (gen_tree.sh); `ir.sh` = callgrind Ir per
+  steady-state scan/event; `realproc.sh`, `daemon_rss.sh`; `equiv.c` regex-split fuzzer.
+- `run2-gameboost-scripts/`: fake root bind-mounted on /srv (unshare -m, needs root);
+  `setup.sh base=<checkout> new=<checkout>`, `snap.sh`, `correctness.sh new` (42 cases),
+  `metrics.sh base new` (Ir+spawns), `wall.sh` (abrun ABAB, GB_CPU).
+- `run2-mastertile/`: `mock.js`/`scenario.js`; `summary.js base new` (API accesses per phase),
+  `check.js old new --seeds 3000 --steps 200`.
+Install hyperfine/shellcheck with apt-get at the start of a run if missing.

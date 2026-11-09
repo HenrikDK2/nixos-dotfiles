@@ -1,0 +1,74 @@
+diff --git a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+index 35d6f5e..76a8279 100644
+--- a/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
++++ b/home/programs/desktop/plasma/files/kwin/mastertile/contents/code/main.js
+@@ -311,10 +311,15 @@ function rememberTileState(state, tile) {
+ function tryRestoreTile(window, snapshotCache) {
+     const state = window.mt;
+ 
+-    if (!state || window.fullScreen || window.minimized ||
+-        window.move || window.resize || window.tile) {
+-        return;
+-    }
++    if (!state || window.fullScreen || window.minimized || window.tile) return;
++
++    restoreUntiled(window, state, snapshotCache);
++}
++
++// tryRestoreTile for a window the caller already found tracked, untiled, not
++// fullscreen and not minimized.
++function restoreUntiled(window, state, snapshotCache) {
++    if (window.move || window.resize) return;
+ 
+     const tile = findTileByState(window, state, snapshotCache);
+ 
+@@ -443,24 +448,35 @@ function computeOccupancies(snapshot, selfWindow, snapshotCache) {
+     const { entries } = snapshot;
+     const occupancy = new Map(entries.map(entry => [entry.tile, new Set()]));
+     const context = windowContext(selfWindow);
++    // Window -> (!minimized && shares the context), for windows seen in a tile;
++    // the windowList() pass below reuses it instead of reading them again.
++    const visible = new Map();
+ 
+     // Explicit tile occupants may not be discoverable by geometry matching.
+     for (const entry of entries) {
+         const occupants = occupancy.get(entry.tile);
+ 
+         for (const window of entry.tile.windows) {
+-            if (window !== selfWindow && !window.minimized &&
+-                sharesContext(context, window)) {
+-                occupants.add(window);
++            if (window === selfWindow) continue;
++
++            let isVisible = visible.get(window);
++            if (isVisible === undefined) {
++                isVisible = !window.minimized && sharesContext(context, window);
++                visible.set(window, isVisible);
+             }
++            if (isVisible) occupants.add(window);
+         }
+     }
+ 
+     const windows = workspace.windowList();
+ 
+     for (const window of windows) {
+-        if (window === selfWindow || !window.normalWindow || window.minimized ||
+-            window.dialog || window.transient || !sharesContext(context, window)) {
++        if (window === selfWindow || !window.normalWindow) continue;
++
++        const isVisible = visible.get(window);
++        if (isVisible === false || (isVisible === undefined && window.minimized) ||
++            window.dialog || window.transient ||
++            (isVisible === undefined && !sharesContext(context, window))) {
+             continue;
+         }
+ 
+@@ -471,7 +487,7 @@ function computeOccupancies(snapshot, selfWindow, snapshotCache) {
+         let assignedTile = window.tile;
+ 
+         if (!fullScreen && !assignedTile && state && !state.userUntiled) {
+-            tryRestoreTile(window, snapshotCache);
++            restoreUntiled(window, state, snapshotCache);
+             assignedTile = window.tile;
+         }
+ 

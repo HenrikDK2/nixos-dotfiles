@@ -1,0 +1,244 @@
+diff --git a/system/services/gameboost/scripts/exit.sh b/system/services/gameboost/scripts/exit.sh
+index 59f0958..12d5a9f 100644
+--- a/system/services/gameboost/scripts/exit.sh
++++ b/system/services/gameboost/scripts/exit.sh
+@@ -19,14 +19,22 @@ load_state() {
+     done < "$STATE"
+ }
+ 
+-# restore_saved REGEX: restore matching entries, newest first (GPU profile
+-# before level). Returns 1 without a state file.
++# restore_saved GROUP: restore the group's entries, newest first (GPU profile
++# before level). Returns 1 without a state file. The groups are literal glob
++# patterns, parsed once: a regex (=~) would be compiled anew for every entry.
+ restore_saved() {
+     ((HAVE_STATE)) || return 1
+-    local i
++    local i f
+     for ((i = ${#SAVED_FILES[@]} - 1; i >= 0; i--)); do
+-        [[ ${SAVED_FILES[i]} =~ $1 ]] &&
+-            echo "${SAVED_VALUES[i]}" > "${SAVED_FILES[i]}" 2>/dev/null
++        f=${SAVED_FILES[i]}
++        case $1 in
++            sata) [[ $f == *link_power_management_policy* ]] ;;
++            nvme) [[ $f == /sys/block/nvme* ]] ;;
++            pcie) [[ $f == /sys/bus/pci/devices/*/power/control || $f == *pcie_aspm* ]] ;;
++            cpu) [[ $f == *cpufreq* || $f == *intel_pstate* || $f == *amd_x3d_mode* || $f == *cpu.weight* ]] ;;
++            gpu) [[ $f == *pp_power_profile_mode* || $f == *power_dpm_force_performance_level* ||
++                $f == /sys/bus/pci/devices/*/power/control ]] ;;
++        esac && echo "${SAVED_VALUES[i]}" > "$f" 2>/dev/null
+     done
+     return 0
+ }
+@@ -40,7 +48,7 @@ set_cpu_governor() {
+ 
+     systemctl stop --no-block gameboost-hold.service 2>/dev/null
+ 
+-    restore_saved 'cpufreq|intel_pstate|amd_x3d_mode|cpu\.weight' && return
++    restore_saved cpu && return
+ 
+     # power-profiles-daemon owns the governor and EPP: don't fight it.
+     systemctl is-active --quiet power-profiles-daemon.service && return
+@@ -83,7 +91,7 @@ set_cpu_governor() {
+ set_gpu_auto() {
+     local gpu class
+ 
+-    restore_saved 'pp_power_profile_mode|power_dpm_force_performance_level|^/sys/bus/pci/devices/.*/power/control$' && return
++    restore_saved gpu && return
+ 
+     # Fallback without state file: profile before level (needs "manual").
+     for gpu in /sys/bus/pci/devices/*; do
+@@ -119,7 +127,7 @@ kill_lingering_processes() {
+ restore_sata_power_management() {
+     local host
+ 
+-    restore_saved 'link_power_management_policy' && return
++    restore_saved sata && return
+ 
+     for host in /sys/class/scsi_host/host*/link_power_management_policy; do
+         echo med_power_with_dipm > "$host" 2>/dev/null
+@@ -129,7 +137,7 @@ restore_sata_power_management() {
+ restore_nvme_power_management() {
+     local nvme_dev
+ 
+-    restore_saved '^/sys/block/nvme' && return
++    restore_saved nvme && return
+ 
+     for nvme_dev in /sys/block/nvme*/device; do
+         [ -d "$nvme_dev/power" ] || continue
+@@ -141,7 +149,7 @@ restore_nvme_power_management() {
+ restore_pcie_power_management() {
+     local pci
+ 
+-    restore_saved '^/sys/bus/pci/devices/.*/power/control$|pcie_aspm' && return
++    restore_saved pcie && return
+ 
+     for pci in /sys/bus/pci/devices/*/power/control; do
+         echo auto > "$pci" 2>/dev/null
+@@ -149,14 +157,13 @@ restore_pcie_power_management() {
+     echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null
+ }
+ 
++# CUPS units start.sh stopped, read by main before it removes the list.
++CUPS_UNITS=()
++
+ # Start the CUPS units start.sh stopped (socket first, then the service if
+ # cupsd was running).
+ start_cups() {
+-    local units=()
+-    [ -f "$CUPS_STOPPED" ] || return 0
+-    mapfile -t units < "$CUPS_STOPPED"
+-    rm -f "$CUPS_STOPPED"
+-    ((${#units[@]})) && systemctl start --no-block "${units[@]}" 2>/dev/null
++    ((${#CUPS_UNITS[@]})) && systemctl start --no-block "${CUPS_UNITS[@]}" 2>/dev/null
+ }
+ 
+ # An auto-upgrade that came due while the game ran (auto-update/main.sh
+@@ -185,7 +192,9 @@ main() {
+     set_gpu_auto
+     kill_lingering_processes
+ 
+-    rm -f "$STATE"
++    # One rm for the state file and the CUPS list.
++    [ -f "$CUPS_STOPPED" ] && mapfile -t CUPS_UNITS < "$CUPS_STOPPED"
++    rm -f "$STATE" "$CUPS_STOPPED"
+ 
+     start_cups
+     resume_deferred_upgrade
+diff --git a/system/services/gameboost/scripts/start.sh b/system/services/gameboost/scripts/start.sh
+index e46e1f1..0ce4372 100644
+--- a/system/services/gameboost/scripts/start.sh
++++ b/system/services/gameboost/scripts/start.sh
+@@ -21,7 +21,7 @@ load_saved() {
+ # is_saved FILE: true if FILE's original is in $STATE. If $STATE was removed
+ # meanwhile (exit.sh of a previous game), nothing counts as saved any more.
+ is_saved() {
+-    [ -f "$STATE" ] || SAVED=()
++    [[ -f $STATE ]] || SAVED=()
+     [[ -n ${SAVED[$1]+x} ]]
+ }
+ 
+@@ -33,10 +33,12 @@ save_original() {
+ }
+ 
+ # set_saved FILE VALUE: save FILE's original once, then write VALUE.
+-# Returns 1 if FILE isn't writable.
++# Returns 1 if FILE isn't writable. Runs for every sysfs file: save_original
++# is inlined (its is_saved check would repeat the one here; only its $STATE
++# test can differ, so that is kept).
+ set_saved() {
+     local cur
+-    [ -w "$1" ] || return 1
++    [[ -w $1 ]] || return 1
+ 
+     if ! is_saved "$1"; then
+         read -r cur < "$1" 2>/dev/null
+@@ -44,7 +46,9 @@ set_saved() {
+             cur=${cur#*\[}
+             cur=${cur%%\]*}
+         fi
+-        save_original "$1" "$cur"
++        [[ -f $STATE ]] || SAVED=()
++        printf '%s=%s\n' "$1" "$cur" >> "$STATE"
++        SAVED[$1]=1
+     fi
+ 
+     echo "$2" > "$1" 2>/dev/null
+@@ -194,19 +198,54 @@ disable_pcie_power_management() {
+ # This loop covers every process, several times per game: it uses expansions
+ # that are linear in the line length and no here-strings (which bash reads one
+ # byte per syscall), and redirects stderr once.
++# With CONFIG_PROC_CHILDREN (/proc/PID/task/TID/children, each thread's
++# children) only the tree itself is read: the game's threads instead of every
++# process on the system. Same TREE, in the same order.
+ tree_pids() {
+-    local stat line head rest pid ppid i
++    local stat line head rest pid ppid i j t
++    local -a more kids_of
+     local -A kids=()
+     TREE=()
+ 
++    if [ -e /proc/thread-self/children ]; then
++        for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
++        for ((i = 0; i < ${#TREE[@]}; i++)); do
++            # Children in pid string order, as the /proc scan below finds
++            # them (insertion sort: a process has only a few).
++            kids_of=()
++            for t in /proc/"${TREE[i]}"/task/*/children; do
++                more=()
++                read -r -a more < "$t"   # 1 at EOF (no newline); more is filled
++                for pid in "${more[@]}"; do
++                    for ((j = ${#kids_of[@]}; j > 0; j--)); do
++                        [[ ${kids_of[j - 1]} > "$pid" ]] || break
++                        kids_of[j]=${kids_of[j - 1]}
++                    done
++                    kids_of[j]=$pid
++                done
++            done 2>/dev/null
++            TREE+=("${kids_of[@]}")
++        done
++        return
++    fi
++
+     for stat in /proc/[0-9]*/stat; do
+-        # read returns 1 at EOF (no NUL in the file); line is still filled.
+-        read -r -d '' line < "$stat"
++        # Only the first 128 bytes: bash's read costs per byte, and the ppid
++        # is the 4th field. comm is at most 63 bytes (64-byte kthread name
++        # buffer), so the last ') ' and the ppid after it are within them.
++        # read returns 1 at EOF; line is still filled.
++        read -r -N 128 line < "$stat"
+         head=${line%") "*}       # up to the last ') '
+         rest=${line#"$head") }   # after it; the whole line if none
+         ppid=${rest#* }          # "STATE PPID ..."
++        if [[ $ppid != *" "* ]]; then   # ppid cut off: the whole line
++            read -r -d '' line < "$stat"
++            head=${line%") "*}
++            rest=${line#"$head") }
++            ppid=${rest#* }
++        fi
+         ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
++        [[ -n $ppid && $ppid != *[!0-9]* ]] || continue   # gone while reading
+         pid=${stat#/proc/}
+         kids[$ppid]+=" ${pid%/stat}"
+     done 2>/dev/null
+@@ -310,6 +349,20 @@ RENDER_SLICE_NS=500000   # default slice is 1.6-3 ms depending on the kernel
+ RENDER_SAMPLE_S=3
+ RENDER_MIN_BUSY=20       # percent of one CPU over the sample
+ 
++# wait_s SECONDS: sleep without a sleep process: a timed read on a pipe that
++# never gets data (opened read-write, so it never reaches EOF either). One
++# fork for the pipe instead of a fork and exec per sleep, and nothing is
++# left running when gameboostd SIGTERMs start.sh in the middle of a wait.
++WAIT_FD=
++wait_s() {
++    [ -n "$WAIT_FD" ] || exec {WAIT_FD}<> <(:)
++    if [ -n "$WAIT_FD" ]; then
++        read -r -t "$1" -u "$WAIT_FD" _
++    else
++        sleep "$1"   # no /dev/fd
++    fi
++}
++
+ boost_render_thread() {
+     local pid t tid name line head rest policy run base state d best= best_name= best_d=0 pref= pref_name= pref_d=0
+     local -a f
+@@ -327,7 +380,7 @@ boost_render_thread() {
+             read -r run _ < "$t/schedstat" && t0[$t]=$run
+         done
+     done 2>/dev/null
+-    sleep "$RENDER_SAMPLE_S"
++    wait_s "$RENDER_SAMPLE_S"
+     [ -f "$FLAG" ] || return
+ 
+     for t in "${!t0[@]}"; do
+@@ -373,7 +426,7 @@ FOLLOW_UP=(10 boost 20 render 27 boost)   # +10 s, +30 s (+3 s sample), +60 s
+ follow_up() {
+     local i
+     for ((i = 0; i < ${#FOLLOW_UP[@]}; i += 2)); do
+-        sleep "${FOLLOW_UP[i]}"
++        wait_s "${FOLLOW_UP[i]}"
+         [ -f "$FLAG" ] || return
+         case ${FOLLOW_UP[i + 1]} in
+             boost) boost_tree "$@" ;;

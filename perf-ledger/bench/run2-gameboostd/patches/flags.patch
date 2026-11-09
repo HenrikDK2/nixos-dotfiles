@@ -1,0 +1,18 @@
+diff --git a/system/services/gameboost/default.nix b/system/services/gameboost/default.nix
+index 14c2f9d..e200257 100644
+--- a/system/services/gameboost/default.nix
++++ b/system/services/gameboost/default.nix
+@@ -14,10 +14,12 @@ let
+     # Dynamically linked on purpose: libc pages are shared with every other
+     # process, so the daemon's real footprint (PSS) is ~220 KB versus ~810 KB
+     # for a static build, whose private copy of libc code counts in full.
++    # -fno-plt: libc calls go through the GOT directly instead of a PLT stub
++    # (symbols are bound at load time anyway: hardening's bindnow).
+     buildPhase = ''
+       runHook preBuild
+ 
+-      $CC -O2 -s -Wall src/gameboostd.c -o gameboostd
++      $CC -O2 -fno-plt -s -Wall src/gameboostd.c -o gameboostd
+       $CC -O2 -s -Wall src/gameboost-hold.c -o gameboost-hold -lsystemd
+ 
+       runHook postBuild

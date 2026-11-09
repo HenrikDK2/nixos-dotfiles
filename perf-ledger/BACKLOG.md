@@ -6,6 +6,11 @@ Rejected in run 1 (do not retry unless the code changes): tree_pids via task/*/c
 (race), IFS=')' stat split (UTF-8 mis-parse), busctl --auto-start=no (ignored by
 get-property), single rm in exit.sh (CUPS race), occupancy-visible-memo, float-prune.
 
+Run 2 (2026-11-09) re-covered the same three targets by mistake (concurrent with run 1); its
+PRs #6/#7 were closed as duplicates. Additional rejections from run 2: gameboostd "^.*"
+regex anchoring (all variants), drain-init-once, -fno-plt, multi-anchor prefilter, c7
+set_saved inline (= run 1 set-saved-once).
+
 ## Not yet covered (highest priority for the next runs)
 1. mastertile-effect/contents/code/main.js: per-frame/per-event cost (reuse bench/mastertile
    mock + qjsengine host).
@@ -36,3 +41,20 @@ get-property), single rm in exit.sh (CUPS race), occupancy-visible-memo, float-p
 - [mastertile] Extend the harness to the sibling mastertile-effect/contents/code/main.js (per-frame/per-event cost); it is not covered yet.
 - [mastertile] Model Wayland's asynchronous geometry ack in kwin-mock (frameGeometryChanged after tileChanged, deferred) and re-run equiv for robustness.
 - [mastertile] computeOccupancies converts entry.tile.windows for every leaf, even though windowList() already gives each window's tile via window.tile. Explore deriving explicit occupants from windowList alone; this needs a proof that tile.windows always equals {w : w.tile === tile} in KWin.
+
+## Follow-up ideas from run 2 (untested or needing re-test)
+- [gameboost-scripts] c1: tree_pids fallback reads only `read -r -N 128` of each stat, with a
+  full-read fallback when the ppid is cut off. Measured on 9008034: -20.1% Ir (start path),
+  about -9% with real-length stat lines, 3/3 skeptics OK. It is close to run 1's rejected
+  ${line:0:80} idea, but that one was never measured and had no fallback. Re-test against main
+  after #4 merges, and say explicitly why it differs. Harness: bench/run2-gameboost-scripts.
+- [gameboostd] Lazy "^.*" anchoring: compile the anchored form only after an alternative has
+  reached regexec N times, so the startup and RSS cost stays at base. Only worth it with
+  evidence of real-/proc CPU per event; run 2 found user Ir is <15% of real scan CPU. Exclude
+  alternatives with backreferences or with '$' inside a repeated group (not equivalent).
+- [mastertile] Floating overflow windows (more windows than tiles, StackExtra off) run a full
+  lazy tile search on every app geometry change: about 25 API accesses per event at N=8.
+- [gameboostd, correctness, not perf] extract_literal ignores stacked quantifiers. For "wine+*"
+  it keeps "wine" as a required literal although the 'e' is optional. bench/run2-gameboostd
+  equiv.c found 23 split-vs-whole differences on random patterns, on main. The patterns
+  main.sh ships today cannot reach it.
