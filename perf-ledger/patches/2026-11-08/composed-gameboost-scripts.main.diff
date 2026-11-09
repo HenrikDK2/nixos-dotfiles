@@ -1,0 +1,107 @@
+diff -ruN pristine/system/services/gameboost/scripts/exit.sh compose/scripts/system/services/gameboost/scripts/exit.sh
+--- a/system/services/gameboost/scripts/exit.sh	2026-11-08 18:07:13.000000000 +0000
++++ b/system/services/gameboost/scripts/exit.sh	2026-11-09 03:39:59.103121863 +0000
+@@ -19,13 +19,16 @@
+     done < "$STATE"
+ }
+ 
+-# restore_saved REGEX: restore matching entries, newest first (GPU profile
+-# before level). Returns 1 without a state file.
++# restore_saved PATTERN: restore entries whose path matches the glob
++# PATTERN, newest first (GPU profile before level). Returns 1 without a state
++# file. A glob, not a regex: bash compiles a =~ regex again on every test,
++# which made this loop most of exit.sh's CPU time.
+ restore_saved() {
+     ((HAVE_STATE)) || return 1
+     local i
+     for ((i = ${#SAVED_FILES[@]} - 1; i >= 0; i--)); do
+-        [[ ${SAVED_FILES[i]} =~ $1 ]] &&
++        # shellcheck disable=SC2053 # $1 is a pattern
++        [[ ${SAVED_FILES[i]} == $1 ]] &&
+             echo "${SAVED_VALUES[i]}" > "${SAVED_FILES[i]}" 2>/dev/null
+     done
+     return 0
+@@ -40,7 +43,7 @@
+ 
+     systemctl stop --no-block gameboost-hold.service 2>/dev/null
+ 
+-    restore_saved 'cpufreq|intel_pstate|amd_x3d_mode|cpu\.weight' && return
++    restore_saved '@(*cpufreq*|*intel_pstate*|*amd_x3d_mode*|*cpu.weight*)' && return
+ 
+     # power-profiles-daemon owns the governor and EPP: don't fight it.
+     systemctl is-active --quiet power-profiles-daemon.service && return
+@@ -83,7 +86,7 @@
+ set_gpu_auto() {
+     local gpu class
+ 
+-    restore_saved 'pp_power_profile_mode|power_dpm_force_performance_level|^/sys/bus/pci/devices/.*/power/control$' && return
++    restore_saved '@(*pp_power_profile_mode*|*power_dpm_force_performance_level*|/sys/bus/pci/devices/*/power/control)' && return
+ 
+     # Fallback without state file: profile before level (needs "manual").
+     for gpu in /sys/bus/pci/devices/*; do
+@@ -97,18 +100,20 @@
+     done
+ }
+ 
+-# One pgrep for the three process names; the .exe count only runs while
+-# winedevice.exe does.
++# The three process names are read from /proc/PID/comm with builtins
++# (pgrep opens five files per process for the same answer); the .exe count
++# only runs while winedevice.exe does.
+ kill_lingering_processes() {
+-    local name wl=0 reaper=0 winedevice=0
++    local comm name wl=0 reaper=0 winedevice=0
+ 
+-    while read -r _ name; do
++    for comm in /proc/[0-9]*/comm; do
++        IFS= read -r name < "$comm" || continue
+         case $name in
+             gamescope-wl) wl=1 ;;
+             gamescopereaper) reaper=1 ;;
+-            *) winedevice=1 ;;
++            winedevice?exe) winedevice=1 ;;
+         esac
+-    done < <(pgrep -lx 'gamescope-wl|gamescopereaper|winedevice.exe')
++    done 2>/dev/null
+ 
+     ((!wl && reaper)) && killall -9 gamescopereaper 2>/dev/null
+ 
+@@ -119,7 +124,7 @@
+ restore_sata_power_management() {
+     local host
+ 
+-    restore_saved 'link_power_management_policy' && return
++    restore_saved '*link_power_management_policy*' && return
+ 
+     for host in /sys/class/scsi_host/host*/link_power_management_policy; do
+         echo med_power_with_dipm > "$host" 2>/dev/null
+@@ -129,7 +134,7 @@
+ restore_nvme_power_management() {
+     local nvme_dev
+ 
+-    restore_saved '^/sys/block/nvme' && return
++    restore_saved '/sys/block/nvme*' && return
+ 
+     for nvme_dev in /sys/block/nvme*/device; do
+         [ -d "$nvme_dev/power" ] || continue
+@@ -141,7 +146,7 @@
+ restore_pcie_power_management() {
+     local pci
+ 
+-    restore_saved '^/sys/bus/pci/devices/.*/power/control$|pcie_aspm' && return
++    restore_saved '@(/sys/bus/pci/devices/*/power/control|*pcie_aspm*)' && return
+ 
+     for pci in /sys/bus/pci/devices/*/power/control; do
+         echo auto > "$pci" 2>/dev/null
+diff -ruN pristine/system/services/gameboost/scripts/start.sh compose/scripts/system/services/gameboost/scripts/start.sh
+--- a/system/services/gameboost/scripts/start.sh	2026-11-08 18:07:13.000000000 +0000
++++ b/system/services/gameboost/scripts/start.sh	2026-11-09 03:39:59.105685642 +0000
+@@ -206,7 +206,7 @@
+         rest=${line#"$head") }   # after it; the whole line if none
+         ppid=${rest#* }          # "STATE PPID ..."
+         ppid=${ppid%% *}
+-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
++        [[ $ppid == +([0-9]) ]] || continue   # gone while reading (a glob: =~ compiles its regex every time)
+         pid=${stat#/proc/}
+         kids[$ppid]+=" ${pid%/stat}"
+     done 2>/dev/null
