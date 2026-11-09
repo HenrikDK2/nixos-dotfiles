@@ -194,19 +194,54 @@ disable_pcie_power_management() {
 # This loop covers every process, several times per game: it uses expansions
 # that are linear in the line length and no here-strings (which bash reads one
 # byte per syscall), and redirects stderr once.
+# With CONFIG_PROC_CHILDREN (/proc/PID/task/TID/children, each thread's
+# children) only the tree itself is read: the game's threads instead of every
+# process on the system. Same TREE, in the same order.
 tree_pids() {
-    local stat line head rest pid ppid i
+    local stat line head rest pid ppid i j t
+    local -a more kids_of
     local -A kids=()
     TREE=()
 
+    if [ -e /proc/thread-self/children ]; then
+        for pid; do [ -d "/proc/$pid" ] && TREE+=("$pid"); done
+        for ((i = 0; i < ${#TREE[@]}; i++)); do
+            # Children in pid string order, as the /proc scan below finds
+            # them (insertion sort: a process has only a few).
+            kids_of=()
+            for t in /proc/"${TREE[i]}"/task/*/children; do
+                more=()
+                read -r -a more < "$t"   # 1 at EOF (no newline); more is filled
+                for pid in "${more[@]}"; do
+                    for ((j = ${#kids_of[@]}; j > 0; j--)); do
+                        [[ ${kids_of[j - 1]} > "$pid" ]] || break
+                        kids_of[j]=${kids_of[j - 1]}
+                    done
+                    kids_of[j]=$pid
+                done
+            done 2>/dev/null
+            TREE+=("${kids_of[@]}")
+        done
+        return
+    fi
+
     for stat in /proc/[0-9]*/stat; do
-        # read returns 1 at EOF (no NUL in the file); line is still filled.
-        read -r -d '' line < "$stat"
+        # Only the first 128 bytes: bash's read costs per byte, and the ppid
+        # is the 4th field. comm is at most 63 bytes (64-byte kthread name
+        # buffer), so the last ') ' and the ppid after it are within them.
+        # read returns 1 at EOF; line is still filled.
+        read -r -N 128 line < "$stat"
         head=${line%") "*}       # up to the last ') '
         rest=${line#"$head") }   # after it; the whole line if none
         ppid=${rest#* }          # "STATE PPID ..."
+        if [[ $ppid != *" "* ]]; then   # ppid cut off: the whole line
+            read -r -d '' line < "$stat"
+            head=${line%") "*}
+            rest=${line#"$head") }
+            ppid=${rest#* }
+        fi
         ppid=${ppid%% *}
-        [[ $ppid =~ ^[0-9]+$ ]] || continue   # gone while reading
+        [[ -n $ppid && $ppid != *[!0-9]* ]] || continue   # gone while reading
         pid=${stat#/proc/}
         kids[$ppid]+=" ${pid%/stat}"
     done 2>/dev/null
@@ -310,6 +345,20 @@ RENDER_SLICE_NS=500000   # default slice is 1.6-3 ms depending on the kernel
 RENDER_SAMPLE_S=3
 RENDER_MIN_BUSY=20       # percent of one CPU over the sample
 
+# wait_s SECONDS: sleep without a sleep process: a timed read on a pipe that
+# never gets data (opened read-write, so it never reaches EOF either). One
+# fork for the pipe instead of a fork and exec per sleep, and nothing is
+# left running when gameboostd SIGTERMs start.sh in the middle of a wait.
+WAIT_FD=
+wait_s() {
+    [ -n "$WAIT_FD" ] || exec {WAIT_FD}<> <(:)
+    if [ -n "$WAIT_FD" ]; then
+        read -r -t "$1" -u "$WAIT_FD" _
+    else
+        sleep "$1"   # no /dev/fd
+    fi
+}
+
 boost_render_thread() {
     local pid t tid name line head rest policy run base state d best= best_name= best_d=0 pref= pref_name= pref_d=0
     local -a f
@@ -327,7 +376,7 @@ boost_render_thread() {
             read -r run _ < "$t/schedstat" && t0[$t]=$run
         done
     done 2>/dev/null
-    sleep "$RENDER_SAMPLE_S"
+    wait_s "$RENDER_SAMPLE_S"
     [ -f "$FLAG" ] || return
 
     for t in "${!t0[@]}"; do
@@ -373,7 +422,7 @@ FOLLOW_UP=(10 boost 20 render 27 boost)   # +10 s, +30 s (+3 s sample), +60 s
 follow_up() {
     local i
     for ((i = 0; i < ${#FOLLOW_UP[@]}; i += 2)); do
-        sleep "${FOLLOW_UP[i]}"
+        wait_s "${FOLLOW_UP[i]}"
         [ -f "$FLAG" ] || return
         case ${FOLLOW_UP[i + 1]} in
             boost) boost_tree "$@" ;;
