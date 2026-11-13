@@ -37,24 +37,6 @@
 
     window-rules = [
       {
-        description = "Allow window tearing";
-
-        match = {
-          window-class = {
-            value = ".*";
-            type = "regex";
-          };
-        };
-
-        apply = {
-          tearing = {
-            value = true;
-            apply = "force";
-          };
-        };
-      }
-
-      {
         description = "Look launcher modal focus";
 
         match = {
