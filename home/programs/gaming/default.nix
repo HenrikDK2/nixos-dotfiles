@@ -6,5 +6,8 @@
     proton-cachyos-x86_64-v3
     protontricks
     protonplus
+
+    lsfg-vk
+    lsfg-vk-ui
   ];
 }
