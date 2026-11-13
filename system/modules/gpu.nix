@@ -13,6 +13,12 @@ in
         enable = true;
         enable32Bit = true;
       };
+
+      environment.sessionVariables = {
+        PROTON_ENABLE_WAYLAND = "1";
+        PROTON_USE_WOW64 = "1";
+        VKD3D_SWAPCHAIN_LATENCY_FRAMES=2;
+      };
     }
 
     # NVIDIA variant
