@@ -50,12 +50,6 @@ in
     (lib.mkIf (variant == "amd") {
       hardware.amdgpu.overdrive.enable = true;
       hardware.graphics.package = pkgs.mesa-x86_64-v3;
-
-      environment.systemPackages = [
-        pkgs.low-latency-layer-lto-x86_64-v3
-      ];
-
-      environment.sessionVariables.LOW_LATENCY_LAYER = "1";
     })
   ];
 }
