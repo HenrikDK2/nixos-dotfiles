@@ -6,6 +6,7 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.kernelModules = [ "ntsync" ];
+  boot.loader.systemd-boot.memtest86.enable = true;
 
   # Disable kernel watchdogs
   boot.kernelParams = [
